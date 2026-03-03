@@ -67,7 +67,7 @@ exports.joinGroup = async (req, res) => {
 exports.getMyGroups = async (req, res) => {
   try {
     const groups = await Group.find({ members: req.user._id })
-      .select('name members inviteCode')
+      .select('name members inviteCode balances')
       .populate('members', 'name email');
 
     res.status(200).json({ success: true, data: groups });
