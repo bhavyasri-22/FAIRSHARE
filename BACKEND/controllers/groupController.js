@@ -2,10 +2,18 @@ const Group = require('../models/Group');
 const User = require('../models/User');
 const generateInviteCode = require('../utils/generateInviteCode');
 
+// Helper — safely convert Mongoose Map or plain object to JS object
+function toPlainBalances(balances) {
+  if (!balances) return {};
+  if (balances instanceof Map) return Object.fromEntries(balances);
+  if (typeof balances.toObject === 'function') return balances.toObject();
+  return { ...balances };
+}
+
 // Create Group
 exports.createGroup = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, currency = 'INR' } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'Name is required' });
 
     // Generate unique invite code
@@ -18,6 +26,7 @@ exports.createGroup = async (req, res) => {
 
     const group = await Group.create({
       name,
+      currency: currency.toUpperCase(),
       createdBy: req.user._id,
       inviteCode: code,
       members: [req.user._id],
@@ -45,12 +54,17 @@ exports.joinGroup = async (req, res) => {
     if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
 
     // Prevent duplicate join
-    if (group.members.includes(req.user._id)) {
+    if (group.members.map(String).includes(String(req.user._id))) {
       return res.status(400).json({ success: false, message: 'Already a member' });
     }
 
     group.members.push(req.user._id);
-    group.balances.set(req.user._id.toString(), 0);
+
+    // ✅ Use plain object instead of .set()
+    const balances = toPlainBalances(group.balances);
+    balances[String(req.user._id)] = 0;
+    group.balances = balances;
+
     await group.save();
 
     req.user.groups.push(group._id);
@@ -67,7 +81,7 @@ exports.joinGroup = async (req, res) => {
 exports.getMyGroups = async (req, res) => {
   try {
     const groups = await Group.find({ members: req.user._id })
-      .select('name members inviteCode balances')
+      .select('name members inviteCode balances currency')
       .populate('members', 'name email');
 
     res.status(200).json({ success: true, data: groups });

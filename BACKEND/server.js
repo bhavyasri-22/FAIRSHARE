@@ -1,28 +1,29 @@
-// server.js
-const express = require('express');
-const mongoose = require('mongoose');
-const dotenv = require('dotenv');
+const express   = require('express');
+const mongoose  = require('mongoose');
+const dotenv    = require('dotenv');
+const cors      = require('cors');
 
 dotenv.config();
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
-// Import routes
-const authRoutes = require('./routes/authRoutes');
-const groupRoutes = require('./routes/groupRoutes');
-const expenseRoutes = require('./routes/expenseRoutes');
+// Routes
+const authRoutes       = require('./routes/authRoutes');
+const groupRoutes      = require('./routes/groupRoutes');
+const expenseRoutes    = require('./routes/expenseRoutes');
+const settlementRoutes = require('./routes/settlementRoutes'); // ✅ new
 
-// Connect to MongoDB Atlas
+// Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB Connected'))
   .catch(err => console.log('MongoDB Connection Error:', err));
 
-// Routes
-app.use('/api/auth', authRoutes);    // Auth routes (register/login)
-app.use('/api/groups', groupRoutes); // Group routes (create/join/fetch)
-app.use('/api/expenses', expenseRoutes);
+app.use('/api/auth',        authRoutes);
+app.use('/api/groups',      groupRoutes);
+app.use('/api/expenses',    expenseRoutes);
+app.use('/api/settlements', settlementRoutes); // ✅ new
 
-// Start server
-const PORT = process.env.PORT || 4000; // Use 4000 to avoid AirTunes conflicts on Mac
+const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
