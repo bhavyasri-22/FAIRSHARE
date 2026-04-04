@@ -5,7 +5,7 @@ const groupSchema = new mongoose.Schema({
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   inviteCode: { type: String, unique: true, required: true },
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  balances: { type: Map, of: Number, default: {} }.default,
+  balances: { type: Map, of: Number, default: {} },
    currency: { type: String, default: 'INR' }
 }, { timestamps: true });
 

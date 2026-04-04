@@ -1,8 +1,17 @@
+const CURRENCY_SYMBOLS = {
+  INR: '₹', USD: '$', EUR: '€', GBP: '£',
+  JPY: '¥', AUD: 'A$', CAD: 'C$', SGD: 'S$', AED: 'د.إ'
+};
+
+function currencySymbol(code) {
+  return CURRENCY_SYMBOLS[code] || (code ? code + ' ' : '₹');
+}
+
 export default function BalanceCard({ balance: b }) {
-  const cls = b.balance > 0 ? 'owed' : b.balance < 0 ? 'owes' : 'clear';
   const amtColor = b.balance > 0 ? 'var(--green)' : b.balance < 0 ? 'var(--red)' : 'var(--text3)';
   const barColor = b.balance > 0 ? 'var(--green)' : b.balance < 0 ? 'var(--red)' : 'var(--text3)';
   const sign = b.balance > 0 ? '+' : '';
+  const sym  = currencySymbol(b.currency);
 
   return (
     <div style={{
@@ -15,7 +24,7 @@ export default function BalanceCard({ balance: b }) {
         {b.user.name}
       </div>
       <div style={{ fontFamily: 'var(--font-display)', fontSize: '26px', fontWeight: 800, color: amtColor }}>
-        {sign}₹{Math.abs(b.balance).toFixed(2)}
+        {sign}{sym}{Math.abs(b.balance).toFixed(2)}
       </div>
       <div style={{ fontSize: '11px', color: 'var(--text2)', marginTop: '6px' }}>{b.status}</div>
     </div>

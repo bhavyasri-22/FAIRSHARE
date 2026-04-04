@@ -4,11 +4,23 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { groupsAPI, expensesAPI } from '../api';
 import { Card, CardTitle, Loading, Empty } from '../components/UI';
 
+const CURRENCY_SYMBOLS = {
+  INR: '₹', USD: '$', EUR: '€', GBP: '£',
+  JPY: '¥', AUD: 'A$', CAD: 'C$', SGD: 'S$', AED: 'د.إ'
+};
+function sym(code) { return CURRENCY_SYMBOLS[code] || (code + ' '); }
+
+function formatMultiCurrency(map) {
+  const entries = Object.entries(map).filter(([, v]) => v > 0);
+  if (entries.length === 0) return '0';
+  return entries.map(([cur, amt]) => `${sym(cur)}${amt.toFixed(0)}`).join(' · ');
+}
+
 export default function Dashboard() {
   const { user, setGroups } = useAuth();
   const isMobile = useIsMobile();
   const [loading, setLoading] = useState(true);
-  const [stats,   setStats]   = useState({ groups: 0, owed: 0, owe: 0 });
+  const [stats,   setStats]   = useState({ groups: 0, owedMap: {}, oweMap: {} });
   const [recent,  setRecent]  = useState([]);
 
   useEffect(() => { load(); }, []);
@@ -21,25 +33,32 @@ export default function Dashboard() {
     const groups = gData.data;
     setGroups(groups);
 
-    let owed = 0, owe = 0, allExpenses = [];
+    const owedMap = {}, oweMap = {};
+    let allExpenses = [];
 
     for (const g of groups) {
       const eData = await expensesAPI.getForGroup(g._id);
       if (!eData.success) continue;
-      const { expenses, balanceSummary } = eData.data;
-      allExpenses.push(...expenses.map(e => ({ ...e, groupName: g.name })));
+      const { expenses, balanceSummary, groupCurrency } = eData.data;
+      const cur = groupCurrency || g.currency || 'INR';
+
+      allExpenses.push(...expenses.map(e => ({ ...e, groupName: g.name, groupCurrency: cur })));
+
       const me = balanceSummary.find(b => b.user.id === user._id || b.user.id === user.id);
       if (me) {
-        if (me.balance > 0) owed += me.balance;
-        if (me.balance < 0) owe  += Math.abs(me.balance);
+        if (me.balance > 0) owedMap[cur] = (owedMap[cur] || 0) + me.balance;
+        if (me.balance < 0) oweMap[cur]  = (oweMap[cur]  || 0) + Math.abs(me.balance);
       }
     }
 
     allExpenses.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    setStats({ groups: groups.length, owed, owe });
+    setStats({ groups: groups.length, owedMap, oweMap });
     setRecent(allExpenses.slice(0, 6));
     setLoading(false);
   }
+
+  const owedText = formatMultiCurrency(stats.owedMap);
+  const oweText  = formatMultiCurrency(stats.oweMap);
 
   return (
     <div className="fade-up">
@@ -52,9 +71,7 @@ export default function Dashboard() {
 
       {loading ? <Loading /> : (
         <>
-          {/* Stat cards */}
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
-            {/* Groups — hidden on mobile to save space, show in 2-col */}
             {!isMobile && (
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '20px 24px', position: 'relative', overflow: 'hidden' }}>
                 <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', background: 'var(--accent)' }} />
@@ -67,19 +84,22 @@ export default function Dashboard() {
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: isMobile ? '16px' : '20px 24px', position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', background: 'var(--green)' }} />
               <div style={{ fontSize: '10px', color: 'var(--text2)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px' }}>You are owed</div>
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: isMobile ? '24px' : '32px', fontWeight: 800, color: 'var(--green)' }}>₹{stats.owed.toFixed(0)}</div>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: isMobile ? '18px' : '26px', fontWeight: 800, color: 'var(--green)', wordBreak: 'break-word', lineHeight: 1.3 }}>
+                {owedText === '0' ? '—' : owedText}
+              </div>
               <div style={{ fontSize: '12px', color: 'var(--text3)', marginTop: '4px' }}>across all groups</div>
             </div>
 
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: isMobile ? '16px' : '20px 24px', position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', background: 'var(--red)' }} />
               <div style={{ fontSize: '10px', color: 'var(--text2)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px' }}>You owe</div>
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: isMobile ? '24px' : '32px', fontWeight: 800, color: 'var(--red)' }}>₹{stats.owe.toFixed(0)}</div>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: isMobile ? '18px' : '26px', fontWeight: 800, color: 'var(--red)', wordBreak: 'break-word', lineHeight: 1.3 }}>
+                {oweText === '0' ? '—' : oweText}
+              </div>
               <div style={{ fontSize: '12px', color: 'var(--text3)', marginTop: '4px' }}>across all groups</div>
             </div>
           </div>
 
-          {/* Recent activity */}
           <Card>
             <CardTitle>Recent Activity</CardTitle>
             {recent.length === 0 ? (
@@ -92,7 +112,7 @@ export default function Dashboard() {
                     <div style={{ flex: 1, minWidth: 0, fontSize: '13px', lineHeight: 1.5 }}>
                       <strong>{e.paidBy?.name}</strong>
                       <span style={{ color: 'var(--text2)' }}> paid </span>
-                      <strong>₹{e.totalAmount}</strong>
+                      <strong>{sym(e.currency || e.groupCurrency)}{e.totalAmount}</strong>
                       <span style={{ color: 'var(--text2)' }}> for </span>
                       <em>{e.description}</em>
                       <span style={{ color: 'var(--text3)' }}> · {e.groupName}</span>
