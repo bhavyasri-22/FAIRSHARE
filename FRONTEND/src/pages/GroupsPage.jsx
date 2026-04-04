@@ -3,20 +3,21 @@ import { useAuth } from '../context/AuthContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { groupsAPI } from '../api';
 import { Card, CardTitle, FormGroup, Input, Select, Button, Alert, Loading, Empty } from '../components/UI';
+import GroupChat from '../components/GroupChat'; // ✅ ADDED
 
 const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'SGD', 'AED'];
 const currencyFlag = (c) => ({ INR: '🇮🇳', USD: '🇺🇸', EUR: '🇪🇺', GBP: '🇬🇧', JPY: '🇯🇵', AUD: '🇦🇺', CAD: '🇨🇦', SGD: '🇸🇬', AED: '🇦🇪' }[c] || '💱');
 
 export default function GroupsPage() {
-  const { groups, setGroups } = useAuth();
+  const { groups, setGroups, user, token } = useAuth(); // ✅ ADDED user + token
   const isMobile = useIsMobile();
-  const [loading,      setLoading]      = useState(false);
-  const [grpName,      setGrpName]      = useState('');
-  const [currency,     setCurrency]     = useState('INR');
-  const [joinCode,     setJoinCode]     = useState('');
-  const [createAlert,  setCreateAlert]  = useState(null);
-  const [joinAlert,    setJoinAlert]    = useState(null);
-  const [activeTab,    setActiveTab]    = useState('list'); // mobile tab: list | create | join
+  const [loading, setLoading] = useState(false);
+  const [grpName, setGrpName] = useState('');
+  const [currency, setCurrency] = useState('INR');
+  const [joinCode, setJoinCode] = useState('');
+  const [createAlert, setCreateAlert] = useState(null);
+  const [joinAlert, setJoinAlert] = useState(null);
+  const [activeTab, setActiveTab] = useState('list');
 
   useEffect(() => { loadGroups(); }, []);
 
@@ -68,7 +69,6 @@ export default function GroupsPage() {
 
       {isMobile ? (
         <>
-          {/* Mobile tab switcher */}
           <div style={{ display: 'flex', gap: '4px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '4px', marginBottom: '16px' }}>
             {tabBtn('list', `My Groups (${groups.length})`)}
             {tabBtn('create', '+ Create')}
@@ -80,7 +80,7 @@ export default function GroupsPage() {
               {loading ? <Loading /> : groups.length === 0 ? (
                 <Empty icon="🏝" text="No groups yet" />
               ) : groups.map(g => (
-                <GroupCard key={g._id} group={g} />
+                <GroupCard key={g._id} group={g} user={user} token={token} /> // ✅ ADDED
               ))}
             </Card>
           )}
@@ -113,7 +113,6 @@ export default function GroupsPage() {
           )}
         </>
       ) : (
-        /* Desktop layout */
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: '24px' }}>
           <div>
             <Card>
@@ -125,7 +124,6 @@ export default function GroupsPage() {
                 <Select value={currency} onChange={e => setCurrency(e.target.value)}>
                   {CURRENCIES.map(c => <option key={c} value={c}>{currencyFlag(c)} {c}</option>)}
                 </Select>
-                <div style={{ fontSize: '11px', color: 'var(--text2)', marginTop: '6px' }}>All balances shown in this currency</div>
               </FormGroup>
               <Alert message={createAlert?.msg} type={createAlert?.type} />
               <Button onClick={createGroup}>Create Group</Button>
@@ -134,7 +132,7 @@ export default function GroupsPage() {
             <Card style={{ marginTop: '20px' }}>
               <CardTitle>Join Group</CardTitle>
               <FormGroup label="Invite Code">
-                <Input placeholder="ABC123" value={joinCode} onChange={e => setJoinCode(e.target.value.toUpperCase())} style={{ letterSpacing: '3px' }} onKeyDown={e => e.key === 'Enter' && joinGroup()} />
+                <Input placeholder="ABC123" value={joinCode} onChange={e => setJoinCode(e.target.value.toUpperCase())} onKeyDown={e => e.key === 'Enter' && joinGroup()} />
               </FormGroup>
               <Alert message={joinAlert?.msg} type={joinAlert?.type} />
               <Button onClick={joinGroup}>Join Group</Button>
@@ -145,7 +143,9 @@ export default function GroupsPage() {
             <CardTitle>My Groups</CardTitle>
             {loading ? <Loading /> : groups.length === 0 ? (
               <Empty icon="🏝" text="No groups yet — create or join one" />
-            ) : groups.map(g => <GroupCard key={g._id} group={g} />)}
+            ) : groups.map(g => (
+              <GroupCard key={g._id} group={g} user={user} token={token} /> // ✅ ADDED
+            ))}
           </Card>
         </div>
       )}
@@ -153,7 +153,10 @@ export default function GroupsPage() {
   );
 }
 
-function GroupCard({ group: g }) {
+// ✅ ONLY ADDITIONS INSIDE GroupCard
+function GroupCard({ group: g, user, token }) {
+  const [showChat, setShowChat] = useState(false); // ✅ ADDED
+
   function copyCode(code, btn) {
     navigator.clipboard.writeText(code);
     btn.textContent = 'Copied!';
@@ -168,13 +171,29 @@ function GroupCard({ group: g }) {
           {g.currency || 'INR'}
         </div>
       </div>
+
       <div style={{ fontSize: '12px', color: 'var(--text2)', marginBottom: '10px' }}>
         {g.members.length} member{g.members.length !== 1 ? 's' : ''} · {g.members.map(m => m.name).join(', ')}
       </div>
+
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <span style={{ fontSize: '16px', letterSpacing: '4px', color: 'var(--accent)', flex: 1, fontWeight: 500 }}>{g.inviteCode}</span>
         <button onClick={e => copyCode(g.inviteCode, e.target)} style={{ padding: '5px 12px', background: 'none', border: '1px solid var(--border2)', color: 'var(--text2)', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>Copy</button>
       </div>
+
+      {/* ✅ ADDED CHAT BUTTON */}
+      <div style={{ marginTop: '10px' }}>
+        <Button onClick={() => setShowChat(!showChat)}>
+          {showChat ? 'Hide Chat' : 'Open Chat'}
+        </Button>
+      </div>
+
+      {/* ✅ ADDED CHAT COMPONENT */}
+      {showChat && (
+        <div style={{ marginTop: '10px' }}>
+          <GroupChat groupId={g._id} user={user} token={token} />
+        </div>
+      )}
     </div>
   );
 }
