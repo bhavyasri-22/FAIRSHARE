@@ -11,6 +11,7 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 
@@ -26,7 +27,7 @@ io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
   socket.on('join_group', (groupId) => {
-    socket.join(groupId);
+    socket.join(groupId.toString());
   });
 
   socket.on('send_message', async ({ groupId, userId, text }) => {
@@ -41,7 +42,7 @@ io.on('connection', (socket) => {
 
       const populatedMsg = await message.populate('sender', 'name');
 
-      io.to(groupId).emit('receive_message', populatedMsg);
+      io.to(groupId.toString()).emit('receive_message', populatedMsg); // ✅ FIX
     } catch (err) {
       console.error('Socket message error:', err);
     }

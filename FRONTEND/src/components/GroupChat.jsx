@@ -19,26 +19,50 @@ export default function GroupChat({ groupId, user, token }) {
 
   // Socket setup
   useEffect(() => {
-    socket.emit("join_group", groupId);
+  if (!groupId) return;
 
-    socket.on("receive_message", (msg) => {
-      setMessages(prev => [...prev, msg]);
-    });
+  console.log("Joining group:", groupId);
 
-    return () => socket.off("receive_message");
-  }, [groupId]);
+  // ✅ join room
+  socket.emit("join_group", groupId);
 
-  // Auto scroll
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  // ✅ stable listener
+  const handleMessage = (msg) => {
+    console.log("Received message:", msg);
+    setMessages(prev => [...prev, msg]);
+  };
 
+  socket.on("receive_message", handleMessage);
+
+  // ✅ cleanup (VERY IMPORTANT)
+  return () => {
+    socket.off("receive_message", handleMessage);
+  };
+}, [groupId]);
+
+
+  // ✅ FIXED sendMessage (ONLY IMPROVED)
   const sendMessage = () => {
     if (!text.trim()) return;
 
+    // ✅ DEBUG USER STRUCTURE
+    console.log("USER OBJECT:", user);
+
+    // ✅ SAFE USER ID EXTRACTION
+    const senderId =
+      user?._id ||
+      user?.id ||
+      user?.user?._id ||
+      user?.data?._id;
+
+    if (!senderId) {
+      console.error("❌ senderId is undefined. Fix user object.");
+      return;
+    }
+
     socket.emit("send_message", {
       groupId,
-      userId: user._id,
+      userId: senderId, // ✅ FIXED
       text,
     });
 
@@ -58,7 +82,8 @@ export default function GroupChat({ groupId, user, token }) {
         paddingRight: 6
       }}>
         {messages.map((m) => {
-          const isMe = m.sender._id === user._id;
+          // ✅ SAFE CHECK (prevents crash)
+          const isMe = m.sender?._id === (user?._id || user?.id);
 
           return (
             <div
@@ -79,7 +104,7 @@ export default function GroupChat({ groupId, user, token }) {
                   opacity: 0.6,
                   marginBottom: 2
                 }}>
-                  {m.sender.name}
+                  {m.sender?.name || "User"} {/* ✅ SAFE */}
                 </div>
               )}
 
