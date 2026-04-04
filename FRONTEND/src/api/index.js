@@ -21,3 +21,8 @@ export const settlementsAPI = {
   record:     (payload) => api.post('/settlements',           payload),
   getHistory: (groupId) => api.get(`/settlements/${groupId}`),
 };
+
+
+export const analyticsAPI = {
+  get: (period = '6m') => api.get(`/analytics?period=${period}`),
+};

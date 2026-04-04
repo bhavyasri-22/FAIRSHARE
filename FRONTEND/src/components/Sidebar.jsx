@@ -6,6 +6,7 @@ const NAV = [
   { path: '/groups',    label: 'Groups',    icon: '◈' },
   { path: '/expenses',  label: 'Expenses',  icon: '◎' },
   { path: '/settle',    label: 'Settle Up', icon: '◉' },
+  { path: '/analytics', label: 'Analytics', icon: '◑' },
 ];
 
 export default function Sidebar() {

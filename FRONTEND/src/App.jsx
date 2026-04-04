@@ -5,7 +5,8 @@ import AuthPage     from './pages/AuthPage';
 import Dashboard    from './pages/Dashboard';
 import GroupsPage   from './pages/GroupsPage';
 import ExpensesPage from './pages/ExpensesPage';
-import SettlePage   from './pages/SettlePage';
+import SettlePage     from './pages/SettlePage';
+import AnalyticsPage  from './pages/AnalyticsPage';
 
 function PrivateLayout() {
   const { token } = useAuth();
@@ -20,6 +21,7 @@ function PrivateLayout() {
           <Route path="/groups"    element={<GroupsPage />} />
           <Route path="/expenses"  element={<ExpensesPage />} />
           <Route path="/settle"    element={<SettlePage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="*"          element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
@@ -36,7 +38,7 @@ function PublicRoute() {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Routes>
           <Route path="/auth" element={<PublicRoute />} />
           <Route path="/*"    element={<PrivateLayout />} />
