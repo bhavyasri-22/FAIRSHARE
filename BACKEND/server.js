@@ -13,7 +13,7 @@ const server = http.createServer(app);
 
 app.set('trust proxy', 1);
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // ── SOCKET.IO ────────────────────────────────────────────────
 const io = new Server(server, {
@@ -111,6 +111,7 @@ const expenseRoutes    = require('./routes/expenseRoutes');
 const settlementRoutes = require('./routes/settlementRoutes');
 const messageRoutes    = require('./routes/messageRoutes');
 const analyticsRoutes  = require('./routes/analyticsRoutes');
+const receiptRoutes    = require('./routes/receiptRoutes');   // 👈 ADD
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB Connected'))
@@ -122,6 +123,8 @@ app.use('/api/expenses',    writeLimiter, expenseRoutes);
 app.use('/api/settlements', writeLimiter, settlementRoutes);
 app.use('/api/messages',                  messageRoutes);
 app.use('/api/analytics',                 analyticsRoutes);
+app.use('/api/receipts',    writeLimiter, receiptRoutes); 
+
 
 // ── START ─────────────────────────────────────────────────────
 const PORT = process.env.PORT || 4000;

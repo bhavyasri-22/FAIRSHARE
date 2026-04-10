@@ -21,44 +21,14 @@ const GEMINI_URL =
 
 // ── Gemini Vision extraction ──────────────────────────────────────────────────
 async function extractWithGemini(base64Data, mimeType) {
-  const prompt = `You are a receipt parser. Look at this receipt image and extract:
-1. The TOTAL amount paid (the final amount, after tax, the largest "total" figure)
-2. A short description of what was purchased (merchant name or category, max 50 characters)
-
-Respond ONLY with valid JSON in exactly this format, no explanation, no markdown:
-{"amount": 1234.56, "description": "Merchant Name or Category"}
-
-If you cannot find the total amount, use null for amount.
-If you cannot determine a description, use null for description.`;
-
-  const response = await fetch(GEMINI_URL, {
+  const response = await fetch('/api/receipts/scan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        parts: [
-          { text: prompt },
-          { inline_data: { mime_type: mimeType, data: base64Data } }
-        ]
-      }],
-      generationConfig: { temperature: 0, maxOutputTokens: 100 }
-    })
+    body: JSON.stringify({ base64: base64Data, mimeType })
   });
-
-  if (!response.ok) throw new Error(`Gemini API error: ${response.status}`);
-
+  if (!response.ok) throw new Error('Backend scan failed');
   const data = await response.json();
-  const raw  = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-  if (!raw) throw new Error('Empty Gemini response');
-
-  // Strip markdown code fences if model adds them despite the prompt
-  const clean   = raw.replace(/```json|```/g, '').trim();
-  const parsed  = JSON.parse(clean);
-  return {
-    amount:      parsed.amount      ? parseFloat(parsed.amount)       : null,
-    description: parsed.description ? String(parsed.description).trim() : '',
-    source:      'gemini',
-  };
+  return { ...data, source: 'gemini' };
 }
 
 // ── Tesseract OCR fallback ────────────────────────────────────────────────────
@@ -133,7 +103,7 @@ export default function ReceiptScanner({ onResult }) {
     let result = null;
 
     // ── Try Gemini first ──────────────────────────────────
-    if (GEMINI_KEY) {
+     
       try {
         setProgress(30); // show some progress while waiting for API
         const base64 = await fileToBase64(file);
@@ -143,7 +113,7 @@ export default function ReceiptScanner({ onResult }) {
         console.warn('Gemini failed, falling back to Tesseract:', geminiErr.message);
         result = null;
       }
-    }
+    
 
     // ── Fallback to Tesseract ─────────────────────────────
     if (!result) {
