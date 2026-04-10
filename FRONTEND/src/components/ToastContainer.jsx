@@ -3,18 +3,25 @@ import { useNotif } from '../context/NotifContext';
 const ICONS = {
   expense_added:       '💸',
   settlement_recorded: '✅',
+  chat_message:        '💬',
   default:             '🔔',
+};
+
+const ACCENT_COLORS = {
+  expense_added:       'var(--accent)',
+  settlement_recorded: 'var(--green)',
+  chat_message:        'var(--yellow)',
+  default:             'var(--accent)',
 };
 
 export default function ToastContainer() {
   const { toasts, dismissToast } = useNotif();
-
   if (!toasts.length) return null;
 
   return (
     <div style={{
       position: 'fixed',
-      bottom: '80px',   // above mobile bottom nav
+      bottom: '80px',
       right: '16px',
       zIndex: 9999,
       display: 'flex',
@@ -22,6 +29,7 @@ export default function ToastContainer() {
       gap: '10px',
       maxWidth: '340px',
       width: 'calc(100vw - 32px)',
+      pointerEvents: 'none', // let clicks pass through the gap between toasts
     }}>
       {toasts.map(t => (
         <div
@@ -29,7 +37,7 @@ export default function ToastContainer() {
           style={{
             background: 'var(--surface)',
             border: '1px solid var(--border2)',
-            borderLeft: '3px solid var(--accent)',
+            borderLeft: `3px solid ${ACCENT_COLORS[t.type] || ACCENT_COLORS.default}`,
             borderRadius: 'var(--radius)',
             padding: '14px 16px',
             boxShadow: 'var(--shadow)',
@@ -37,6 +45,7 @@ export default function ToastContainer() {
             alignItems: 'flex-start',
             gap: '12px',
             animation: 'fadeUp 0.25s ease both',
+            pointerEvents: 'all',
           }}
         >
           <span style={{ fontSize: '18px', lineHeight: 1, flexShrink: 0, marginTop: '1px' }}>
@@ -47,7 +56,7 @@ export default function ToastContainer() {
             {t.groupName && (
               <div style={{
                 fontSize: '10px',
-                color: 'var(--accent)',
+                color: ACCENT_COLORS[t.type] || 'var(--accent)',
                 fontFamily: 'var(--font-display)',
                 fontWeight: 700,
                 letterSpacing: '1px',
@@ -65,18 +74,12 @@ export default function ToastContainer() {
           <button
             onClick={() => dismissToast(t.id)}
             style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text3)',
-              cursor: 'pointer',
-              fontSize: '16px',
-              lineHeight: 1,
-              padding: '0 0 0 4px',
-              flexShrink: 0,
+              background: 'none', border: 'none',
+              color: 'var(--text3)', cursor: 'pointer',
+              fontSize: '16px', lineHeight: 1,
+              padding: '0 0 0 4px', flexShrink: 0,
             }}
-          >
-            ✕
-          </button>
+          >✕</button>
         </div>
       ))}
     </div>
