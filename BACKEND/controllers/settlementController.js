@@ -1,7 +1,6 @@
 const Settlement = require('../models/Settlement');
-const Group = require('../models/Group');
+const Group      = require('../models/Group');
 
-// Helper — safely convert Mongoose Map or plain object to JS object
 function toPlainBalances(balances) {
   if (!balances) return {};
   if (balances instanceof Map) return Object.fromEntries(balances);
@@ -9,7 +8,7 @@ function toPlainBalances(balances) {
   return { ...balances };
 }
 
-// RECORD A SETTLEMENT (Mark as Paid)
+// RECORD A SETTLEMENT
 exports.recordSettlement = async (req, res) => {
   try {
     const { groupId, paidTo, amount, note } = req.body;
@@ -26,24 +25,19 @@ exports.recordSettlement = async (req, res) => {
     if (!groupMemberIds.includes(String(req.user._id))) {
       return res.status(403).json({ success: false, message: 'Not a group member' });
     }
-
     if (!groupMemberIds.includes(String(paidTo))) {
       return res.status(400).json({ success: false, message: 'paidTo user is not a group member' });
     }
-
     if (String(req.user._id) === String(paidTo)) {
       return res.status(400).json({ success: false, message: 'You cannot settle with yourself' });
     }
 
     // ── Update group balances ─────────────────────────────
-    const balances = toPlainBalances(group.balances);
-
+    const balances   = toPlainBalances(group.balances);
     const payerId    = String(req.user._id);
     const receiverId = String(paidTo);
 
-    // payer's balance goes up (they owe less)
     balances[payerId]    = (balances[payerId]    || 0) + parseFloat(amount);
-    // receiver's balance goes down (they are owed less)
     balances[receiverId] = (balances[receiverId] || 0) - parseFloat(amount);
 
     group.balances = balances;
@@ -63,6 +57,29 @@ exports.recordSettlement = async (req, res) => {
       { path: 'paidBy', select: 'name email' },
       { path: 'paidTo', select: 'name email' }
     ]);
+
+    // ── Emit notification to the receiver ────────────────
+    try {
+      const { io } = require('../server');
+      const sym = { INR: '₹', USD: '$', EUR: '€', GBP: '£', JPY: '¥', AUD: 'A$', CAD: 'C$', SGD: 'S$', AED: 'د.إ' };
+      const currSym = sym[group.currency] || (group.currency + ' ');
+
+      const notification = {
+        type:      'settlement_recorded',
+        groupId,
+        groupName: group.name,
+        message:   `${req.user.name} paid you ${currSym}${parseFloat(amount).toFixed(2)} in ${group.name}`,
+        at:        new Date().toISOString(),
+      };
+
+      // Notify the receiver
+      io.to(`user_${receiverId}`).emit('notification', notification);
+
+      // Also broadcast balance refresh to the group room
+      io.to(groupId.toString()).emit('settlement_recorded', { groupId });
+    } catch (notifErr) {
+      console.error('Notification emit error:', notifErr.message);
+    }
 
     res.status(201).json({ success: true, data: populated });
   } catch (err) {

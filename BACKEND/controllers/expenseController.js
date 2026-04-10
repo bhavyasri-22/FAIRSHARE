@@ -1,8 +1,7 @@
 const Expense = require('../models/Expense');
-const Group = require('../models/Group');
+const Group   = require('../models/Group');
 const getExchangeRate = require('../utils/getExchangeRate');
 
-// Helper — safely convert Mongoose Map or plain object to JS object
 function toPlainBalances(balances) {
   if (!balances) return {};
   if (balances instanceof Map) return Object.fromEntries(balances);
@@ -30,16 +29,16 @@ exports.addExpense = async (req, res) => {
 
     // ── Currency conversion ──────────────────────────────
     const expenseCurrency = (currency || group.currency || 'INR').toUpperCase();
-    const groupCurrency = (group.currency || 'INR').toUpperCase();
-    let exchangeRate = 1;
+    const groupCurrency   = (group.currency || 'INR').toUpperCase();
+    let exchangeRate    = 1;
     let convertedAmount = totalAmount;
 
     if (expenseCurrency !== groupCurrency) {
-      exchangeRate = await getExchangeRate(expenseCurrency, groupCurrency);
+      exchangeRate    = await getExchangeRate(expenseCurrency, groupCurrency);
       convertedAmount = parseFloat((totalAmount * exchangeRate).toFixed(2));
     }
 
-    // ── Build splits using converted amount ──────────────
+    // ── Build splits ─────────────────────────────────────
     let computedSplits = [];
 
     if (splitType === 'equal') {
@@ -93,8 +92,7 @@ exports.addExpense = async (req, res) => {
 
     // ── Update group balances ─────────────────────────────
     const balances = toPlainBalances(group.balances);
-
-    const payerId = String(req.user._id);
+    const payerId  = String(req.user._id);
     balances[payerId] = (balances[payerId] || 0) + convertedAmount;
 
     for (const split of computedSplits) {
@@ -106,9 +104,38 @@ exports.addExpense = async (req, res) => {
     await group.save();
 
     const populated = await expense.populate([
-      { path: 'paidBy', select: 'name email' },
-      { path: 'splits.user', select: 'name email' }
+      { path: 'paidBy',       select: 'name email' },
+      { path: 'splits.user',  select: 'name email' }
     ]);
+
+    // ── Emit real-time notification to every group member ─
+    try {
+      const { io } = require('../server');
+      const sym = { INR: '₹', USD: '$', EUR: '€', GBP: '£', JPY: '¥', AUD: 'A$', CAD: 'C$', SGD: 'S$', AED: 'د.إ' };
+      const currSym = sym[groupCurrency] || groupCurrency + ' ';
+
+      const notification = {
+        type:      'expense_added',
+        groupId,
+        groupName: group.name,
+        message:   `${req.user.name} added "${description}" — ${currSym}${convertedAmount.toFixed(2)}`,
+        expenseId: expense._id,
+        at:        new Date().toISOString(),
+      };
+
+      // Notify every member except the one who added it
+      groupMemberIds.forEach(memberId => {
+        if (memberId !== payerId) {
+          io.to(`user_${memberId}`).emit('notification', notification);
+        }
+      });
+
+      // Also broadcast to the group room (for live expense list refresh)
+      io.to(groupId.toString()).emit('expense_added', { groupId });
+    } catch (notifErr) {
+      // Never block the response if notifications fail
+      console.error('Notification emit error:', notifErr.message);
+    }
 
     res.status(201).json({ success: true, data: populated });
   } catch (err) {
@@ -135,8 +162,7 @@ exports.getGroupExpenses = async (req, res) => {
       .populate('splits.user', 'name email')
       .sort({ createdAt: -1 });
 
-    // ── Build balance summary ─────────────────────────────
-    const balances = toPlainBalances(group.balances);
+    const balances     = toPlainBalances(group.balances);
     const groupCurrency = group.currency || 'INR';
 
     const balanceSummary = group.members.map(member => {
@@ -153,10 +179,7 @@ exports.getGroupExpenses = async (req, res) => {
       };
     });
 
-    res.status(200).json({
-      success: true,
-      data: { expenses, balanceSummary, groupCurrency }
-    });
+    res.status(200).json({ success: true, data: { expenses, balanceSummary, groupCurrency } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: 'Server Error' });
@@ -176,35 +199,31 @@ exports.getSettlements = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not a group member' });
     }
 
-    const balances = toPlainBalances(group.balances);
+    const balances      = toPlainBalances(group.balances);
     const groupCurrency = group.currency || 'INR';
 
-    // Build balances array
     let balanceList = group.members.map(member => ({
-      id: String(member._id),
-      name: member.name,
+      id:      String(member._id),
+      name:    member.name,
       balance: parseFloat((balances[String(member._id)] || 0).toFixed(2))
     }));
 
-    // Separate creditors and debtors
     let creditors = balanceList.filter(b => b.balance > 0).sort((a, b) => b.balance - a.balance);
     let debtors   = balanceList.filter(b => b.balance < 0).sort((a, b) => a.balance - b.balance);
 
     const settlements = [];
 
-    // Greedy algorithm — minimum transactions
     while (creditors.length > 0 && debtors.length > 0) {
       const creditor = creditors[0];
       const debtor   = debtors[0];
-
-      const amount  = Math.min(creditor.balance, Math.abs(debtor.balance));
-      const settled = parseFloat(amount.toFixed(2));
+      const amount   = Math.min(creditor.balance, Math.abs(debtor.balance));
+      const settled  = parseFloat(amount.toFixed(2));
 
       settlements.push({
-        from: { id: debtor.id,   name: debtor.name },
-        to:   { id: creditor.id, name: creditor.name },
-        amount: settled,
-        currency: groupCurrency,
+        from:        { id: debtor.id,   name: debtor.name },
+        to:          { id: creditor.id, name: creditor.name },
+        amount:      settled,
+        currency:    groupCurrency,
         description: `${debtor.name} should pay ${groupCurrency} ${settled} to ${creditor.name}`
       });
 
