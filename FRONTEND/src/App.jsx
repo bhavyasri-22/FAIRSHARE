@@ -1,12 +1,14 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import Sidebar from './components/Sidebar';
+import { NotifProvider } from './context/NotifContext.jsx';
+import ToastContainer from './components/ToastContainer';
+import Sidebar      from './components/Sidebar';
 import AuthPage     from './pages/AuthPage';
 import Dashboard    from './pages/Dashboard';
 import GroupsPage   from './pages/GroupsPage';
 import ExpensesPage from './pages/ExpensesPage';
-import SettlePage     from './pages/SettlePage';
-import AnalyticsPage  from './pages/AnalyticsPage';
+import SettlePage   from './pages/SettlePage';
+import AnalyticsPage from './pages/AnalyticsPage';
 
 function PrivateLayout() {
   const { token } = useAuth();
@@ -25,6 +27,8 @@ function PrivateLayout() {
           <Route path="*"          element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
+      {/* Toast notifications rendered here, above all content */}
+      <ToastContainer />
     </div>
   );
 }
@@ -38,12 +42,15 @@ function PublicRoute() {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <Routes>
-          <Route path="/auth" element={<PublicRoute />} />
-          <Route path="/*"    element={<PrivateLayout />} />
-        </Routes>
-      </BrowserRouter>
+      {/* NotifProvider must be inside AuthProvider (needs user for socket room) */}
+      <NotifProvider>
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <Routes>
+            <Route path="/auth" element={<PublicRoute />} />
+            <Route path="/*"   element={<PrivateLayout />} />
+          </Routes>
+        </BrowserRouter>
+      </NotifProvider>
     </AuthProvider>
   );
 }

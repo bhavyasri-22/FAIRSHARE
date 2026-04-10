@@ -8,40 +8,43 @@ const { Server } = require('socket.io');
 
 dotenv.config();
 
-const app = express();
+const app    = express();
 const server = http.createServer(app);
 
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 
 // ── SOCKET.IO ────────────────────────────────────────────────
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: 'http://localhost:3000',
     credentials: true,
   },
 });
 
+// Export io so controllers can emit events (notifications)
+module.exports.io = io;
+
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
+  // Each user joins their personal notification room (userId)
+  // and any group rooms they request
+  socket.on('join_user', (userId) => {
+    socket.join(`user_${userId}`);
+  });
+
   socket.on('join_group', (groupId) => {
-    socket.join(groupId);
+    socket.join(groupId.toString());
   });
 
   socket.on('send_message', async ({ groupId, userId, text }) => {
     try {
       const Message = require('./models/Message');
-
-      const message = await Message.create({
-        group: groupId,
-        sender: userId,
-        text,
-      });
-
+      const message = await Message.create({ group: groupId, sender: userId, text });
       const populatedMsg = await message.populate('sender', 'name');
-
-      io.to(groupId).emit('receive_message', populatedMsg);
+      io.to(groupId.toString()).emit('receive_message', populatedMsg);
     } catch (err) {
       console.error('Socket message error:', err);
     }
@@ -92,20 +95,19 @@ const groupRoutes      = require('./routes/groupRoutes');
 const expenseRoutes    = require('./routes/expenseRoutes');
 const settlementRoutes = require('./routes/settlementRoutes');
 const messageRoutes    = require('./routes/messageRoutes');
+const analyticsRoutes  = require('./routes/analyticsRoutes');
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB Connected'))
   .catch(err => console.log('MongoDB Connection Error:', err));
 
-app.use('/api/auth',        authLimiter, authRoutes);
-app.use('/api/groups',      groupRoutes);
+app.use('/api/auth',        authLimiter,  authRoutes);
+app.use('/api/groups',                    groupRoutes);
 app.use('/api/expenses',    writeLimiter, expenseRoutes);
 app.use('/api/settlements', writeLimiter, settlementRoutes);
-app.use('/api/messages',    messageRoutes);
+app.use('/api/messages',                  messageRoutes);
+app.use('/api/analytics',                 analyticsRoutes);
 
-// ── START SERVER ─────────────────────────────────────────────
+// ── START ────────────────────────────────────────────────────
 const PORT = process.env.PORT || 4000;
-
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -1,19 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { expensesAPI } from '../api';
 import { Card, CardTitle, FormGroup, Input, Select, Button, Alert, Loading, Empty } from '../components/UI';
-import ExpenseCard from '../components/ExpenseCard';
+import ExpenseCard    from '../components/ExpenseCard';
+import ReceiptScanner from '../components/ReceiptScanner';
+import { socket } from '../socket';
 
-const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'SGD', 'AED'];
+const CURRENCIES   = ['INR', 'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'SGD', 'AED'];
 const currencyFlag = (c) => ({ INR: '🇮🇳', USD: '🇺🇸', EUR: '🇪🇺', GBP: '🇬🇧', JPY: '🇯🇵', AUD: '🇦🇺', CAD: '🇨🇦', SGD: '🇸🇬', AED: '🇦🇪' }[c] || '💱');
 
 export default function ExpensesPage() {
   const { groups } = useAuth();
-  const isMobile = useIsMobile();
-  const [activeTab,   setActiveTab]   = useState('list');
+  const isMobile   = useIsMobile();
+  const [activeTab, setActiveTab] = useState('list');
 
-  // Form
+  // Form state
   const [groupId,     setGroupId]     = useState('');
   const [desc,        setDesc]        = useState('');
   const [amount,      setAmount]      = useState('');
@@ -24,29 +26,53 @@ export default function ExpensesPage() {
   const [formAlert,   setFormAlert]   = useState(null);
   const [adding,      setAdding]      = useState(false);
 
-  // List
+  // List state
   const [viewGroupId, setViewGroupId] = useState('');
   const [expenses,    setExpenses]    = useState([]);
   const [listLoading, setListLoading] = useState(false);
 
   const selectedGroup = groups.find(g => g._id === groupId);
-  const members = selectedGroup?.members || [];
+  const members       = selectedGroup?.members || [];
   const groupCurrency = selectedGroup?.currency || 'INR';
-  const activeCurrency = currency || groupCurrency;
-  const isDiff = currency && currency !== groupCurrency;
+  const isDiff        = currency && currency !== groupCurrency;
+  const pctTotal      = members.reduce((s, m) => s + (parseFloat(pctMap[m._id]) || 0), 0);
+  const viewGroup     = groups.find(g => g._id === viewGroupId);
 
   useEffect(() => { setSelectedIds([]); setPctMap({}); setCurrency(''); }, [groupId]);
 
-  const pctTotal = members.reduce((s, m) => s + (parseFloat(pctMap[m._id]) || 0), 0);
-  const viewGroup = groups.find(g => g._id === viewGroupId);
+  // ── Join group socket room & listen for live expense updates ──
+  useEffect(() => {
+    if (!viewGroupId) return;
+    socket.emit('join_group', viewGroupId);
+
+    const handleExpenseAdded = ({ groupId: gid }) => {
+      if (gid === viewGroupId) loadExpenses(viewGroupId);
+    };
+    socket.on('expense_added', handleExpenseAdded);
+    return () => socket.off('expense_added', handleExpenseAdded);
+  }, [viewGroupId]);
+
+  const loadExpenses = useCallback(async (gid) => {
+    if (!gid) return;
+    setListLoading(true);
+    const data = await expensesAPI.getForGroup(gid);
+    setListLoading(false);
+    if (data.success) setExpenses(data.data.expenses);
+  }, []);
 
   async function addExpense() {
     setFormAlert(null);
-    if (!groupId)     return setFormAlert({ msg: 'Select a group', type: 'error' });
-    if (!desc.trim()) return setFormAlert({ msg: 'Description required', type: 'error' });
-    if (!amount || parseFloat(amount) <= 0) return setFormAlert({ msg: 'Enter a valid amount', type: 'error' });
+    if (!groupId)                            return setFormAlert({ msg: 'Select a group',         type: 'error' });
+    if (!desc.trim())                        return setFormAlert({ msg: 'Description required',   type: 'error' });
+    if (!amount || parseFloat(amount) <= 0)  return setFormAlert({ msg: 'Enter a valid amount',   type: 'error' });
 
-    const payload = { groupId, description: desc.trim(), totalAmount: parseFloat(amount), splitType, ...(currency && { currency }) };
+    const payload = {
+      groupId,
+      description: desc.trim(),
+      totalAmount: parseFloat(amount),
+      splitType,
+      ...(currency && { currency }),
+    };
 
     if (splitType === 'equal' && selectedIds.length > 0) payload.splitAmong = selectedIds;
     if (splitType === 'percentage') {
@@ -58,6 +84,7 @@ export default function ExpensesPage() {
     setAdding(true);
     const data = await expensesAPI.add(payload);
     setAdding(false);
+
     if (!data.success) return setFormAlert({ msg: data.message, type: 'error' });
 
     setFormAlert({ msg: `"${desc.trim()}" added!`, type: 'success' });
@@ -66,12 +93,10 @@ export default function ExpensesPage() {
     if (isMobile) setTimeout(() => setActiveTab('list'), 800);
   }
 
-  async function loadExpenses(gid) {
-    if (!gid) return;
-    setListLoading(true);
-    const data = await expensesAPI.getForGroup(gid);
-    setListLoading(false);
-    if (data.success) setExpenses(data.data.expenses);
+  // ── OCR receipt callback — auto-fills description + amount ──
+  function handleOCRResult({ description, amount: parsedAmount }) {
+    if (description) setDesc(description);
+    if (parsedAmount) setAmount(String(parsedAmount));
   }
 
   const tabBtn = (id, label) => (
@@ -87,15 +112,21 @@ export default function ExpensesPage() {
   const AddForm = () => (
     <Card>
       <CardTitle>Add Expense</CardTitle>
+
+      {/* ── OCR Scanner ── */}
+      <ReceiptScanner onResult={handleOCRResult} />
+
       <FormGroup label="Group">
         <Select value={groupId} onChange={e => setGroupId(e.target.value)}>
           <option value="">Select group</option>
           {groups.map(g => <option key={g._id} value={g._id}>{g.name} ({g.currency || 'INR'})</option>)}
         </Select>
       </FormGroup>
+
       <FormGroup label="Description">
         <Input placeholder="Hotel, Dinner, Cab..." value={desc} onChange={e => setDesc(e.target.value)} />
       </FormGroup>
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
         <FormGroup label="Amount">
           <Input type="number" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} />
@@ -107,29 +138,36 @@ export default function ExpensesPage() {
           </Select>
         </FormGroup>
       </div>
+
       {isDiff && (
         <div style={{ padding: '10px 14px', borderRadius: 'var(--radius-sm)', marginBottom: '14px', background: 'rgba(255,209,102,0.08)', border: '1px solid rgba(255,209,102,0.2)', fontSize: '12px', color: 'var(--yellow)' }}>
           💱 {amount || '0'} {currency} → {groupCurrency} auto-converted
         </div>
       )}
+
       <FormGroup label="Split Type">
         <Select value={splitType} onChange={e => setSplitType(e.target.value)}>
           <option value="equal">Equal</option>
           <option value="percentage">Percentage</option>
         </Select>
       </FormGroup>
+
       {splitType === 'equal' && members.length > 0 && (
         <FormGroup label="Split Among (none = everyone)">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '6px' }}>
             {members.map(m => (
-              <div key={m._id} onClick={() => setSelectedIds(prev => prev.includes(m._id) ? prev.filter(x => x !== m._id) : [...prev, m._id])}
-                style={{ padding: '6px 14px', borderRadius: '999px', fontSize: '12px', cursor: 'pointer', userSelect: 'none', background: selectedIds.includes(m._id) ? 'rgba(0,212,170,0.12)' : 'var(--surface2)', border: `1px solid ${selectedIds.includes(m._id) ? 'var(--accent)' : 'var(--border2)'}`, color: selectedIds.includes(m._id) ? 'var(--accent)' : 'var(--text2)' }}>
+              <div
+                key={m._id}
+                onClick={() => setSelectedIds(prev => prev.includes(m._id) ? prev.filter(x => x !== m._id) : [...prev, m._id])}
+                style={{ padding: '6px 14px', borderRadius: '999px', fontSize: '12px', cursor: 'pointer', userSelect: 'none', background: selectedIds.includes(m._id) ? 'rgba(0,212,170,0.12)' : 'var(--surface2)', border: `1px solid ${selectedIds.includes(m._id) ? 'var(--accent)' : 'var(--border2)'}`, color: selectedIds.includes(m._id) ? 'var(--accent)' : 'var(--text2)' }}
+              >
                 {m.name}
               </div>
             ))}
           </div>
         </FormGroup>
       )}
+
       {splitType === 'percentage' && members.length > 0 && (
         <FormGroup label="Percentages (must total 100%)">
           {members.map(m => (
@@ -145,6 +183,7 @@ export default function ExpensesPage() {
           </div>
         </FormGroup>
       )}
+
       <Alert message={formAlert?.msg} type={formAlert?.type} />
       <Button onClick={addExpense} disabled={adding}>{adding ? 'Adding...' : 'Add Expense'}</Button>
     </Card>
