@@ -1,4 +1,4 @@
-const BASE = '/api';
+const BASE = 'http://localhost:4000/api';
 
 function getToken() {
   return sessionStorage.getItem('fs_token');
@@ -24,4 +24,5 @@ export const api = {
   get:        (path)       => request('GET',  path),
   post:       (path, body) => request('POST', path, body),
   postPublic: (path, body) => request('POST', path, body, false),
+  del:        (path, body) => request('DELETE', path, body),
 };

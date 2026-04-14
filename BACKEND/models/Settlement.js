@@ -6,7 +6,11 @@ const settlementSchema = new mongoose.Schema({
   paidTo:   { type: mongoose.Schema.Types.ObjectId, ref: 'User',  required: true }, // who received
   amount:   { type: Number, required: true },
   currency: { type: String, default: 'INR' },
-  note:     { type: String, default: '' }
+  note:     { type: String, default: '' },
+
+  // ── Razorpay fields (populated after a successful online payment) ──
+  razorpayOrderId:   { type: String, default: '' },
+  razorpayPaymentId: { type: String, default: '' },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Settlement', settlementSchema);

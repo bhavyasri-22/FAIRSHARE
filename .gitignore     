@@ -1,4 +1,5 @@
 node_modules/
+FRONTEND/node_modules/
 .cache/
 dist/
 build/

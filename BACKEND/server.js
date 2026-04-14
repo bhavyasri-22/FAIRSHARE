@@ -111,7 +111,8 @@ const expenseRoutes    = require('./routes/expenseRoutes');
 const settlementRoutes = require('./routes/settlementRoutes');
 const messageRoutes    = require('./routes/messageRoutes');
 const analyticsRoutes  = require('./routes/analyticsRoutes');
-const receiptRoutes    = require('./routes/receiptRoutes');   // 👈 ADD
+const receiptRoutes    = require('./routes/receiptRoutes');
+const paymentRoutes    = require('./routes/paymentRoutes');    // Razorpay
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB Connected'))
@@ -124,6 +125,7 @@ app.use('/api/settlements', writeLimiter, settlementRoutes);
 app.use('/api/messages',                  messageRoutes);
 app.use('/api/analytics',                 analyticsRoutes);
 app.use('/api/receipts',    writeLimiter, receiptRoutes); 
+app.use('/api/payments',   writeLimiter, paymentRoutes);    // Razorpay
 
 
 // ── START ─────────────────────────────────────────────────────

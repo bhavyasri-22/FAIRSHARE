@@ -6,9 +6,10 @@ export const authAPI = {
 };
 
 export const groupsAPI = {
-  create: (name, currency) => api.post('/groups',      { name, currency }),
-  join:   (inviteCode)     => api.post('/groups/join', { inviteCode }),
-  getAll: ()               => api.get('/groups/my'),
+  create:       (name, currency)     => api.post('/groups',      { name, currency }),
+  join:         (inviteCode)         => api.post('/groups/join', { inviteCode }),
+  getAll:       ()                   => api.get('/groups/my'),
+  removeMember: (groupId, memberId)  => api.del(`/groups/${groupId}/members/${memberId}`),
 };
 
 export const expensesAPI = {
@@ -25,4 +26,10 @@ export const settlementsAPI = {
 
 export const analyticsAPI = {
   get: (period = '6m') => api.get(`/analytics?period=${period}`),
+};
+
+export const paymentsAPI = {
+  createOrder: (payload) => api.post('/payments/create-order', payload),
+  verify:      (payload) => api.post('/payments/verify', payload),
+  getHistory:  (groupId) => api.get(`/payments/${groupId}`),
 };

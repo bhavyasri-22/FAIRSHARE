@@ -2,17 +2,27 @@ import { useState, useRef } from 'react';
 
 // ── AI extraction (Mindee via backend) ───────────────────────────────────────
 async function extractWithAI(base64Data, mimeType) {
-  const response = await fetch('/api/receipts/scan', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ base64: base64Data, mimeType })
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 45000);
 
-  if (!response.ok) throw new Error('Backend scan failed');
+  try {
+    const response = await fetch('/api/receipts/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base64: base64Data, mimeType }),
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
 
-  const data = await response.json();
-
-  return { ...data, source: 'mindee' };
+    if (!response.ok) throw new Error('Backend scan failed');
+    const data = await response.json();
+    return { ...data, source: 'mindee' };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') throw new Error('Scan timed out (45s).');
+    throw err;
+  }
 }
 
 // ── Tesseract OCR fallback ───────────────────────────────────────────────────
@@ -70,11 +80,28 @@ async function extractWithTesseract(file, onProgress) {
   };
 }
 
-// ── Convert File to base64 ───────────────────────────────────────────────────
-function fileToBase64(file) {
+// ── Compress Image ───────────────────────────────────────────────────────────
+function compressImage(file, maxWidth = 1000) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
@@ -102,12 +129,13 @@ export default function ReceiptScanner({ onResult }) {
     setErrMsg('');
 
     let result = null;
+    let b64 = null;
 
     // ── Try AI (Mindee backend) ─────────────────────────────
     try {
       setProgress(30);
-      const base64 = await fileToBase64(file);
-      result = await extractWithAI(base64, file.type);
+      b64 = await compressImage(file);
+      result = await extractWithAI(b64, 'image/jpeg');
       setProgress(100);
     } catch (err) {
       console.warn('AI failed, falling back to Tesseract:', err.message);
@@ -128,7 +156,7 @@ export default function ReceiptScanner({ onResult }) {
 
     setSource(result.source);
     setStatus('done');
-    onResult({ amount: result.amount, description: result.description });
+    onResult({ amount: result.amount, description: result.description, billImage: b64 });
   }
 
   function reset() {
@@ -160,7 +188,10 @@ export default function ReceiptScanner({ onResult }) {
             cursor: 'pointer',
           }}
         >
-          📷 Scan Receipt — AI auto-fill
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            Scan Receipt — AI auto-fill
+          </div>
         </button>
       )}
 
@@ -192,7 +223,10 @@ export default function ReceiptScanner({ onResult }) {
       {/* Done */}
       {status === 'done' && (
         <div style={{ padding: '12px' }}>
-          <div>✓ Receipt processed</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Receipt processed
+          </div>
           <div>
             {source === 'mindee'
               ? 'Powered by Mindee AI'

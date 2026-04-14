@@ -21,6 +21,7 @@ export default function ExpensesPage() {
   const [amount,      setAmount]      = useState('');
   const [currency,    setCurrency]    = useState('');
   const [splitType,   setSplitType]   = useState('equal');
+  const [billImage,   setBillImage]   = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
   const [pctMap,      setPctMap]      = useState({});
   const [formAlert,   setFormAlert]   = useState(null);
@@ -72,6 +73,7 @@ export default function ExpensesPage() {
       totalAmount: parseFloat(amount),
       splitType,
       ...(currency && { currency }),
+      ...(billImage && { billImage }),
     };
 
     if (splitType === 'equal' && selectedIds.length > 0) payload.splitAmong = selectedIds;
@@ -88,15 +90,16 @@ export default function ExpensesPage() {
     if (!data.success) return setFormAlert({ msg: data.message, type: 'error' });
 
     setFormAlert({ msg: `"${desc.trim()}" added!`, type: 'success' });
-    setDesc(''); setAmount(''); setCurrency('');
+    setDesc(''); setAmount(''); setCurrency(''); setBillImage(null);
     if (viewGroupId === groupId) loadExpenses(viewGroupId);
     if (isMobile) setTimeout(() => setActiveTab('list'), 800);
   }
 
   // ── OCR receipt callback — auto-fills description + amount ──
-  function handleOCRResult({ description, amount: parsedAmount }) {
+  function handleOCRResult({ description, amount: parsedAmount, billImage: bImage }) {
     if (description) setDesc(description);
     if (parsedAmount) setAmount(String(parsedAmount));
+    if (bImage) setBillImage(bImage);
   }
 
   const tabBtn = (id, label) => (

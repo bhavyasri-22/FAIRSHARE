@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useIsMobile } from '../hooks/useIsMobile';
-import { expensesAPI, settlementsAPI } from '../api';
+import { expensesAPI, settlementsAPI, paymentsAPI } from '../api';
 import { Card, CardTitle, FormGroup, Select, Input, Button, Alert, Loading, Empty } from '../components/UI';
 import BalanceCard from '../components/BalanceCard';
 
@@ -54,24 +54,162 @@ export default function SettlePage() {
     setShowModal(true);
   }
 
+
+  /*
   async function markAsPaid() {
-    setPayAlert(null);
-    if (!payAmount || parseFloat(payAmount) <= 0)
-      return setPayAlert({ msg: 'Enter a valid amount', type: 'error' });
+  setPayAlert(null);
 
-    setPaying(true);
-    const data = await settlementsAPI.record({
-      groupId,
-      paidTo: modalData.to.id,
-      amount: parseFloat(payAmount),
-      note: payNote
-    });
-    setPaying(false);
-
-    if (!data.success) return setPayAlert({ msg: data.message, type: 'error' });
-    setShowModal(false);
-    load(groupId);
+  if (!payAmount || parseFloat(payAmount) <= 0) {
+    return setPayAlert({ msg: 'Enter a valid amount', type: 'error' });
   }
+
+  try {
+    setPaying(true);
+
+    // ── STEP 1: Create order ─────────────────────
+    const res = await fetch('/api/payments/create-order', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('token')}`, // or use your auth token
+      },
+      body: JSON.stringify({
+        groupId,
+        paidTo: modalData.to.id,
+        amount: parseFloat(payAmount),
+        note: payNote,
+      }),
+    });
+
+    const data = await res.json();
+    if (!data.success) {
+      setPayAlert({ msg: data.message || 'Order creation failed', type: 'error' });
+      setPaying(false);
+      return;
+    }
+
+    const order = data.data;
+
+    // ── STEP 2: Open Razorpay ────────────────────
+    const options = {
+      key: order.keyId,
+      amount: order.amount,
+      currency: order.currency,
+      order_id: order.orderId,
+
+      name: 'FairShare',
+      description: 'Settlement Payment',
+
+      handler: async function (response) {
+        // ── STEP 3: Verify payment ───────────────
+        const verifyRes = await fetch('/api/payments/verify', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${localStorage.getItem('token')}`,
+          },
+          body: JSON.stringify({
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature,
+            groupId,
+            paidTo: modalData.to.id,
+            amount: parseFloat(payAmount),
+            note: payNote,
+          }),
+        });
+
+        const verifyData = await verifyRes.json();
+
+        if (verifyData.success) {
+          setShowModal(false);
+          load(groupId); // refresh data
+        } else {
+          setPayAlert({ msg: 'Payment verification failed', type: 'error' });
+        }
+      },
+
+      theme: {
+        color: '#00d4aa',
+      },
+    };
+
+    const rzp = new window.Razorpay(options);
+    rzp.open();
+
+  } catch (err) {
+    console.error(err);
+    setPayAlert({ msg: 'Payment failed', type: 'error' });
+  } finally {
+    setPaying(false);
+  }
+}*/
+
+  async function payNow() {
+  setPayAlert(null);
+
+  if (!payAmount || parseFloat(payAmount) <= 0) {
+    return setPayAlert({ msg: 'Enter a valid amount', type: 'error' });
+  }
+
+  setPaying(true);
+
+  // 1. Create order
+  const orderRes = await paymentsAPI.createOrder({
+    groupId,
+    paidTo: modalData.to.id,
+    amount: parseFloat(payAmount),
+    note: payNote,
+  });
+
+  if (!orderRes.success) {
+    setPaying(false);
+    return setPayAlert({ msg: orderRes.message, type: 'error' });
+  }
+
+  const { orderId, amount, currency, keyId } = orderRes.data;
+
+  // 2. Open Razorpay
+  const options = {
+    key: keyId,
+    amount,
+    currency,
+    name: 'FairShare',
+    description: 'Settle Payment',
+    order_id: orderId,
+
+    handler: async function (response) {
+      const verifyRes = await paymentsAPI.verify({
+        ...response,
+        groupId,
+        paidTo: modalData.to.id,
+        amount: parseFloat(payAmount),
+        note: payNote,
+      });
+
+      if (verifyRes.success) {
+        setShowModal(false);
+        load(groupId);
+      } else {
+        setPayAlert({ msg: 'Payment verification failed', type: 'error' });
+      }
+    },
+
+    prefill: {
+      name: user.name,
+      email: user.email,
+    },
+
+    theme: {
+      color: '#00d4aa',
+    },
+  };
+
+  const rzp = new window.Razorpay(options);
+  rzp.open();
+
+  setPaying(false);
+}
 
   const sym = currencySymbol(groupCurrency);
 
@@ -253,7 +391,7 @@ export default function SettlePage() {
             )}
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: '18px', fontWeight: 800 }}>Mark as Paid</div>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: '18px', fontWeight: 800 }}>💳 Pay Now</div>
               <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text2)', fontSize: '20px', cursor: 'pointer', padding: '4px 8px' }}>✕</button>
             </div>
 
@@ -284,9 +422,9 @@ export default function SettlePage() {
             </FormGroup>
 
             <Alert message={payAlert?.msg} type={payAlert?.type} />
-            <Button onClick={markAsPaid} disabled={paying}>
-              {paying ? 'Recording...' : `✓ Confirm ${sym}${parseFloat(payAmount || 0).toFixed(2)}`}
-            </Button>
+            <Button onClick={payNow} disabled={paying}>
+  {paying ? 'Opening Razorpay...' : `💳 Pay ${sym}${parseFloat(payAmount || 0).toFixed(2)}`}
+</Button>
           </div>
         </div>
       )}

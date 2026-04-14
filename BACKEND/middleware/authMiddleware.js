@@ -20,4 +20,4 @@ const protect = async (req, res, next) => {
   }
 };
 
-module.exports = protect; // ✅ must export the function
+module.exports = protect;

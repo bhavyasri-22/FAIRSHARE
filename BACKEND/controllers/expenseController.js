@@ -9,10 +9,34 @@ function toPlainBalances(balances) {
   return { ...balances };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
 // ADD EXPENSE
+// Supports splitType: 'equal' | 'percentage' | 'itemized'
+//
+// 'itemized' body example:
+// {
+//   groupId, description, totalAmount, currency,
+//   splitType: 'itemized',
+//   lineItems: [
+//     { description: 'Paneer Tikka', total_price: 300, category: 'veg',     splitAmong: ['userId1','userId2'] },
+//     { description: 'Chicken Kebab', total_price: 500, category: 'non-veg', splitAmong: ['userId3'] },
+//     { description: 'Drinks',        total_price: 200, category: 'drinks',  splitAmong: ['userId1','userId2','userId3'] }
+//   ]
+// }
+// ─────────────────────────────────────────────────────────────────────────────
 exports.addExpense = async (req, res) => {
   try {
-    const { groupId, description, totalAmount, currency, splitType, splits, splitAmong } = req.body;
+    const {
+      groupId,
+      description,
+      totalAmount,
+      currency,
+      splitType,
+      splits,       // for 'percentage'
+      splitAmong,   // for 'equal' subset
+      lineItems,    // for 'itemized'
+      billImage,
+    } = req.body;
 
     if (!groupId || !description || !totalAmount || !splitType) {
       return res.status(400).json({ success: false, message: 'All fields required' });
@@ -27,21 +51,23 @@ exports.addExpense = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not a group member' });
     }
 
-    // ── Currency conversion ──────────────────────────────
+    // ── Currency conversion ──────────────────────────────────────────
     const expenseCurrency = (currency || group.currency || 'INR').toUpperCase();
     const groupCurrency   = (group.currency || 'INR').toUpperCase();
     let exchangeRate    = 1;
-    let convertedAmount = totalAmount;
+    let convertedAmount = parseFloat(totalAmount);
 
     if (expenseCurrency !== groupCurrency) {
       exchangeRate    = await getExchangeRate(expenseCurrency, groupCurrency);
       convertedAmount = parseFloat((totalAmount * exchangeRate).toFixed(2));
     }
 
-    // ── Build splits ─────────────────────────────────────
+    // ── Build splits ─────────────────────────────────────────────────
     let computedSplits = [];
+    let storedLineItems = [];
 
     if (splitType === 'equal') {
+      // ── Equal split (optionally among a subset) ──────────────────
       let targetMembers = groupMemberIds;
 
       if (splitAmong && Array.isArray(splitAmong) && splitAmong.length > 0) {
@@ -49,13 +75,14 @@ exports.addExpense = async (req, res) => {
         if (invalid.length > 0) {
           return res.status(400).json({ success: false, message: 'splitAmong contains non-members' });
         }
-        targetMembers = splitAmong;
+        targetMembers = splitAmong.map(String);
       }
 
       const share = parseFloat((convertedAmount / targetMembers.length).toFixed(2));
       computedSplits = targetMembers.map(userId => ({ user: userId, amount: share }));
 
     } else if (splitType === 'percentage') {
+      // ── Percentage split ─────────────────────────────────────────
       if (!splits || !Array.isArray(splits)) {
         return res.status(400).json({ success: false, message: 'Splits array required for percentage split' });
       }
@@ -71,26 +98,86 @@ exports.addExpense = async (req, res) => {
       }
 
       computedSplits = splits.map(s => ({
-        user: s.userId,
-        amount: parseFloat(((s.percentage / 100) * convertedAmount).toFixed(2)),
-        percentage: s.percentage
+        user:       s.userId,
+        amount:     parseFloat(((s.percentage / 100) * convertedAmount).toFixed(2)),
+        percentage: s.percentage,
       }));
+
+    } else if (splitType === 'itemized') {
+      // ── Itemized / sub-group split ───────────────────────────────
+      //
+      // Each line item carries its own splitAmong list.
+      // We accumulate how much each person owes across all items,
+      // then write a single splits[] entry per person.
+      //
+      if (!lineItems || !Array.isArray(lineItems) || lineItems.length === 0) {
+        return res.status(400).json({ success: false, message: 'lineItems array required for itemized split' });
+      }
+
+      // Map userId → running total owed
+      const userTotals = {};
+
+      for (const item of lineItems) {
+        const itemPrice = parseFloat(item.total_price || 0);
+        if (!itemPrice) continue;
+
+        // Convert item price to group currency
+        const convertedItemPrice = parseFloat((itemPrice * exchangeRate).toFixed(2));
+
+        const members = (item.splitAmong && item.splitAmong.length > 0)
+          ? item.splitAmong.map(String)
+          : groupMemberIds; // fallback: split among everyone
+
+        // Validate members
+        const invalid = members.filter(id => !groupMemberIds.includes(id));
+        if (invalid.length > 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Item "${item.description}" has non-members in splitAmong`,
+          });
+        }
+
+        const share = parseFloat((convertedItemPrice / members.length).toFixed(2));
+        for (const uid of members) {
+          userTotals[uid] = parseFloat(((userTotals[uid] || 0) + share).toFixed(2));
+        }
+
+        // Store enriched line item for the DB
+        storedLineItems.push({
+          description: item.description || '',
+          quantity:    item.quantity    || null,
+          unit_price:  item.unit_price  || null,
+          total_price: itemPrice,
+          category:    item.category    || '',
+          splitAmong:  members,
+        });
+      }
+
+      computedSplits = Object.entries(userTotals).map(([userId, amount]) => ({
+        user: userId,
+        amount,
+      }));
+
+    } else {
+      return res.status(400).json({ success: false, message: `Unknown splitType: ${splitType}` });
     }
 
-    // ── Save expense ─────────────────────────────────────
+    // ── Save expense ─────────────────────────────────────────────────
     const expense = await Expense.create({
-      group: groupId,
+      group:           groupId,
       description,
       totalAmount,
-      currency: expenseCurrency,
+      currency:        expenseCurrency,
       convertedAmount,
       exchangeRate,
-      paidBy: req.user._id,
+      paidBy:          req.user._id,
       splitType,
-      splits: computedSplits
+      splits:          computedSplits,
+      lineItems:       storedLineItems,
+      billImage,
     });
 
-    // ── Update group balances ─────────────────────────────
+    // ── Update group balances ─────────────────────────────────────────
     const balances = toPlainBalances(group.balances);
     const payerId  = String(req.user._id);
     balances[payerId] = (balances[payerId] || 0) + convertedAmount;
@@ -104,15 +191,16 @@ exports.addExpense = async (req, res) => {
     await group.save();
 
     const populated = await expense.populate([
-      { path: 'paidBy',       select: 'name email' },
-      { path: 'splits.user',  select: 'name email' }
+      { path: 'paidBy',      select: 'name email' },
+      { path: 'splits.user', select: 'name email' },
+      { path: 'lineItems.splitAmong', select: 'name email' },
     ]);
 
-    // ── Emit real-time notification to every group member ─
+    // ── Real-time notifications ───────────────────────────────────────
     try {
       const { io } = require('../server');
-      const sym = { INR: '₹', USD: '$', EUR: '€', GBP: '£', JPY: '¥', AUD: 'A$', CAD: 'C$', SGD: 'S$', AED: 'د.إ' };
-      const currSym = sym[groupCurrency] || groupCurrency + ' ';
+      const sym      = { INR: '₹', USD: '$', EUR: '€', GBP: '£', JPY: '¥', AUD: 'A$', CAD: 'C$', SGD: 'S$', AED: 'د.إ' };
+      const currSym  = sym[groupCurrency] || groupCurrency + ' ';
 
       const notification = {
         type:      'expense_added',
@@ -123,17 +211,14 @@ exports.addExpense = async (req, res) => {
         at:        new Date().toISOString(),
       };
 
-      // Notify every member except the one who added it
       groupMemberIds.forEach(memberId => {
         if (memberId !== payerId) {
           io.to(`user_${memberId}`).emit('notification', notification);
         }
       });
 
-      // Also broadcast to the group room (for live expense list refresh)
       io.to(groupId.toString()).emit('expense_added', { groupId });
     } catch (notifErr) {
-      // Never block the response if notifications fail
       console.error('Notification emit error:', notifErr.message);
     }
 
@@ -144,7 +229,9 @@ exports.addExpense = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
 // GET EXPENSES + BALANCE SUMMARY FOR A GROUP
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getGroupExpenses = async (req, res) => {
   try {
     const { groupId } = req.params;
@@ -160,9 +247,10 @@ exports.getGroupExpenses = async (req, res) => {
     const expenses = await Expense.find({ group: groupId })
       .populate('paidBy', 'name email')
       .populate('splits.user', 'name email')
+      .populate('lineItems.splitAmong', 'name email')
       .sort({ createdAt: -1 });
 
-    const balances     = toPlainBalances(group.balances);
+    const balances      = toPlainBalances(group.balances);
     const groupCurrency = group.currency || 'INR';
 
     const balanceSummary = group.members.map(member => {
@@ -175,7 +263,7 @@ exports.getGroupExpenses = async (req, res) => {
           ? `is owed ${groupCurrency} ${balance.toFixed(2)}`
           : balance < 0
           ? `owes ${groupCurrency} ${Math.abs(balance).toFixed(2)}`
-          : 'is settled up'
+          : 'is settled up',
       };
     });
 
@@ -186,7 +274,9 @@ exports.getGroupExpenses = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
 // GET SETTLEMENT PLAN
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getSettlements = async (req, res) => {
   try {
     const { groupId } = req.params;
@@ -205,7 +295,7 @@ exports.getSettlements = async (req, res) => {
     let balanceList = group.members.map(member => ({
       id:      String(member._id),
       name:    member.name,
-      balance: parseFloat((balances[String(member._id)] || 0).toFixed(2))
+      balance: parseFloat((balances[String(member._id)] || 0).toFixed(2)),
     }));
 
     let creditors = balanceList.filter(b => b.balance > 0).sort((a, b) => b.balance - a.balance);
@@ -224,7 +314,7 @@ exports.getSettlements = async (req, res) => {
         to:          { id: creditor.id, name: creditor.name },
         amount:      settled,
         currency:    groupCurrency,
-        description: `${debtor.name} should pay ${groupCurrency} ${settled} to ${creditor.name}`
+        description: `${debtor.name} should pay ${groupCurrency} ${settled} to ${creditor.name}`,
       });
 
       creditor.balance -= settled;

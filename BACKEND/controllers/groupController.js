@@ -70,6 +70,17 @@ exports.joinGroup = async (req, res) => {
     req.user.groups.push(group._id);
     await req.user.save();
 
+    // Emit member_joined
+    try {
+      const { io } = require('../server');
+      io.to(group._id.toString()).emit('member_joined', { 
+        groupId: group._id, 
+        member: { _id: req.user._id, name: req.user.name, email: req.user.email } 
+      });
+    } catch(err) {
+      console.error('Socket emit err:', err);
+    }
+
     res.status(200).json({ success: true, data: group });
   } catch (err) {
     console.log(err);
@@ -85,6 +96,45 @@ exports.getMyGroups = async (req, res) => {
       .populate('members', 'name email');
 
     res.status(200).json({ success: true, data: groups });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+};
+
+// Remove Member
+exports.removeMember = async (req, res) => {
+  try {
+    const { groupId, memberId } = req.params;
+    
+    const group = await Group.findById(groupId);
+    if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
+
+    // Ensure requesting user is admin
+    if (String(group.createdBy) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Only admin can remove members' });
+    }
+
+    // Can't remove admin
+    if (String(memberId) === String(group.createdBy)) {
+      return res.status(400).json({ success: false, message: 'Cannot remove the admin' });
+    }
+
+    if (!group.members.map(String).includes(String(memberId))) {
+      return res.status(400).json({ success: false, message: 'Not a member' });
+    }
+
+    // Remove from group
+    group.members = group.members.filter(id => String(id) !== String(memberId));
+    const balances = toPlainBalances(group.balances);
+    delete balances[String(memberId)];
+    group.balances = balances;
+    await group.save();
+
+    // Remove group from User's groups
+    await User.findByIdAndUpdate(memberId, { $pull: { groups: group._id } });
+
+    res.status(200).json({ success: true, message: 'Member removed' });
   } catch (err) {
     console.log(err);
     res.status(500).json({ success: false, message: 'Server Error' });
