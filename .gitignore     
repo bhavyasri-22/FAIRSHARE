@@ -4,3 +4,6 @@ FRONTEND/node_modules/
 dist/
 build/
 .env
+downloads_backend.diff
+downloads_frontend.diff
+./temp_check_zip
