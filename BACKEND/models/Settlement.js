@@ -8,7 +8,6 @@ const settlementSchema = new mongoose.Schema({
   currency: { type: String, default: 'INR' },
   note:     { type: String, default: '' },
 
-  // ── Razorpay fields (populated after a successful online payment) ──
   razorpayOrderId:   { type: String, default: '' },
   razorpayPaymentId: { type: String, default: '' },
 }, { timestamps: true });
