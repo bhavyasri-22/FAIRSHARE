@@ -1,9 +1,5 @@
 node_modules/
+BACKEND/node_modules/
 FRONTEND/node_modules/
-.cache/
-dist/
-build/
+.DS_Store
 .env
-downloads_backend.diff
-downloads_frontend.diff
-./temp_check_zip
