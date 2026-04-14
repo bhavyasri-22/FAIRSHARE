@@ -1,117 +1,149 @@
 import { useState, useRef } from 'react';
 
-// Tesseract is loaded via CDN script tag in public/index.html (no npm install needed)
-// See instructions at bottom of this file
+// ── AI extraction (Mindee via backend) ───────────────────────────────────────
+async function extractWithAI(base64Data, mimeType) {
+  const response = await fetch('/api/receipts/scan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ base64: base64Data, mimeType })
+  });
 
+  if (!response.ok) throw new Error('Backend scan failed');
+
+  const data = await response.json();
+
+  return { ...data, source: 'mindee' };
+}
+
+// ── Tesseract OCR fallback ───────────────────────────────────────────────────
 const AMOUNT_PATTERNS = [
-  // "Total: 1,234.56" / "TOTAL 1234.56" / "Total INR 1234"
   /(?:total|amount|grand\s*total|net\s*total|bill\s*amount|payable|due)[^\d]{0,10}([\d,]+\.?\d{0,2})/i,
-  // "₹ 1,234.56" / "Rs. 1234" / "INR 1,234"
   /(?:₹|rs\.?|inr|usd|\$|eur|€|gbp|£)\s*([\d,]+\.?\d{0,2})/i,
-  // Last resort: largest number on the receipt
-  null,
 ];
 
-const DESC_PATTERNS = [
-  /(?:restaurant|hotel|cafe|cab|taxi|uber|ola|zomato|swiggy|amazon|flipkart|store|mart|shop|medical|pharmacy|petrol|fuel)\s*[:\-]?\s*([^\n]{3,40})/i,
-  /(?:bill\s*for|payment\s*for|paid\s*for)\s*[:\-]?\s*([^\n]{3,40})/i,
-];
+async function extractWithTesseract(file, onProgress) {
+  if (typeof Tesseract === 'undefined') throw new Error('Tesseract not loaded');
 
-function parseReceipt(rawText) {
-  const text  = rawText.replace(/\r/g, '').trim();
+  const result = await Tesseract.recognize(file, 'eng', {
+    logger: m => {
+      if (m.status === 'recognizing text') {
+        onProgress(Math.round(m.progress * 100));
+      }
+    }
+  });
+
+  const text = result.data.text;
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
-  // ── Extract amount ────────────────────────────────────
   let amount = null;
 
   for (const pattern of AMOUNT_PATTERNS) {
-    if (!pattern) break; // fallback handled below
     const match = text.match(pattern);
     if (match) {
-      const num = parseFloat(match[1].replace(/,/g, ''));
-      if (!isNaN(num) && num > 0) { amount = num; break; }
+      const n = parseFloat(match[1].replace(/,/g, ''));
+      if (!isNaN(n) && n > 0) {
+        amount = n;
+        break;
+      }
     }
   }
 
-  // Fallback: find the largest number in the text
   if (!amount) {
-    const allNums = [...text.matchAll(/([\d,]+\.\d{2})/g)]
+    const nums = [...text.matchAll(/([\d,]+\.\d{2})/g)]
       .map(m => parseFloat(m[1].replace(/,/g, '')))
       .filter(n => n > 0 && n < 1_000_000);
-    if (allNums.length) amount = Math.max(...allNums);
+
+    if (nums.length) amount = Math.max(...nums);
   }
 
-  // ── Extract description ───────────────────────────────
-  let description = '';
-
-  for (const pattern of DESC_PATTERNS) {
-    const match = text.match(pattern);
-    if (match) { description = match[0].trim().slice(0, 60); break; }
-  }
-
-  // Fallback: first non-numeric, non-empty line (often the merchant name)
-  if (!description) {
-    const candidate = lines.find(l => l.length > 3 && !/^\d/.test(l) && !/^(date|time|tax|gst|cgst|sgst)/i.test(l));
-    if (candidate) description = candidate.slice(0, 60);
-  }
+  const candidate = lines.find(
+    l =>
+      l.length > 3 &&
+      !/^\d/.test(l) &&
+      !/^(date|time|tax|gst|cgst|sgst)/i.test(l)
+  );
 
   return {
-    amount:      amount ? parseFloat(amount.toFixed(2)) : null,
-    description: description || '',
-    rawText,
+    amount: amount ? parseFloat(amount.toFixed(2)) : null,
+    description: candidate ? candidate.slice(0, 60) : '',
+    source: 'tesseract',
   };
 }
 
+// ── Convert File to base64 ───────────────────────────────────────────────────
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function ReceiptScanner({ onResult }) {
-  const [status,   setStatus]   = useState('idle'); // idle | scanning | done | error
+  const [status, setStatus] = useState('idle');
   const [progress, setProgress] = useState(0);
-  const [preview,  setPreview]  = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [source, setSource] = useState('');
+  const [errMsg, setErrMsg] = useState('');
   const fileRef = useRef();
 
   async function handleFile(file) {
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
+    if (!file || !file.type.startsWith('image/')) {
       setStatus('error');
+      setErrMsg('Please select an image file.');
       return;
     }
 
     setPreview(URL.createObjectURL(file));
     setStatus('scanning');
     setProgress(0);
+    setErrMsg('');
 
+    let result = null;
+
+    // ── Try AI (Mindee backend) ─────────────────────────────
     try {
-      // Tesseract must be loaded via CDN — see public/index.html instructions
-      if (typeof Tesseract === 'undefined') {
-        throw new Error('Tesseract not loaded. Add the CDN script to public/index.html.');
-      }
-
-      const result = await Tesseract.recognize(file, 'eng', {
-        logger: (m) => {
-          if (m.status === 'recognizing text') {
-            setProgress(Math.round(m.progress * 100));
-          }
-        },
-      });
-
-      const parsed = parseReceipt(result.data.text);
-      setStatus('done');
-      onResult(parsed);
+      setProgress(30);
+      const base64 = await fileToBase64(file);
+      result = await extractWithAI(base64, file.type);
+      setProgress(100);
     } catch (err) {
-      console.error('OCR error:', err);
-      setStatus('error');
+      console.warn('AI failed, falling back to Tesseract:', err.message);
+      result = null;
     }
+
+    // ── Fallback ────────────────────────────────────────────
+    if (!result) {
+      try {
+        result = await extractWithTesseract(file, setProgress);
+      } catch (tErr) {
+        console.error('Tesseract failed:', tErr.message);
+        setStatus('error');
+        setErrMsg('Could not read the receipt. Try a clearer photo.');
+        return;
+      }
+    }
+
+    setSource(result.source);
+    setStatus('done');
+    onResult({ amount: result.amount, description: result.description });
   }
 
   function reset() {
     setStatus('idle');
     setPreview(null);
     setProgress(0);
+    setErrMsg('');
+    setSource('');
     if (fileRef.current) fileRef.current.value = '';
   }
 
   return (
     <div style={{ marginBottom: '14px' }}>
-      {/* Trigger button */}
+
+      {/* Idle */}
       {status === 'idle' && (
         <button
           type="button"
@@ -123,26 +155,15 @@ export default function ReceiptScanner({ onResult }) {
             border: '1px dashed var(--border2)',
             borderRadius: 'var(--radius-sm)',
             color: 'var(--text2)',
-            fontFamily: 'var(--font-display)',
             fontSize: '12px',
             fontWeight: 700,
             cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-            letterSpacing: '0.5px',
-            transition: 'all 0.18s',
           }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)'; }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border2)'; e.currentTarget.style.color = 'var(--text2)'; }}
         >
-          <span style={{ fontSize: '16px' }}>📷</span>
-          Scan Receipt (OCR auto-fill)
+          📷 Scan Receipt — AI auto-fill
         </button>
       )}
 
-      {/* Hidden file input — accepts camera on mobile */}
       <input
         ref={fileRef}
         type="file"
@@ -152,100 +173,40 @@ export default function ReceiptScanner({ onResult }) {
         onChange={e => handleFile(e.target.files[0])}
       />
 
-      {/* Scanning state */}
+      {/* Scanning */}
       {status === 'scanning' && (
-        <div style={{
-          background: 'var(--surface2)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-sm)',
-          padding: '14px',
-        }}>
+        <div style={{ padding: '14px' }}>
           {preview && (
             <img
               src={preview}
-              alt="receipt preview"
-              style={{ width: '100%', maxHeight: '140px', objectFit: 'cover', borderRadius: '6px', marginBottom: '12px', opacity: 0.7 }}
+              alt="receipt"
+              style={{ width: '100%', maxHeight: '140px' }}
             />
           )}
-          <div style={{ fontSize: '12px', color: 'var(--text2)', marginBottom: '8px', fontFamily: 'var(--font-display)', fontWeight: 700 }}>
+          <div>
             Reading receipt... {progress}%
           </div>
-          {/* Progress bar */}
-          <div style={{ height: '3px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden' }}>
-            <div style={{
-              height: '100%',
-              width: `${progress}%`,
-              background: 'var(--accent)',
-              borderRadius: '2px',
-              transition: 'width 0.3s ease',
-            }} />
-          </div>
         </div>
       )}
 
-      {/* Done state */}
+      {/* Done */}
       {status === 'done' && (
-        <div style={{
-          background: 'rgba(0,212,170,0.06)',
-          border: '1px solid rgba(0,212,170,0.2)',
-          borderRadius: 'var(--radius-sm)',
-          padding: '12px 14px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '10px',
-        }}>
-          <div style={{ fontSize: '12px', color: 'var(--accent)', fontFamily: 'var(--font-display)', fontWeight: 700 }}>
-            ✓ Receipt scanned — fields auto-filled
+        <div style={{ padding: '12px' }}>
+          <div>✓ Receipt processed</div>
+          <div>
+            {source === 'mindee'
+              ? 'Powered by Mindee AI'
+              : 'Powered by Tesseract OCR'}
           </div>
-          <button
-            type="button"
-            onClick={reset}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text3)',
-              cursor: 'pointer',
-              fontSize: '11px',
-              fontFamily: 'var(--font-mono)',
-              flexShrink: 0,
-            }}
-          >
-            Scan again
-          </button>
+          <button onClick={reset}>Scan again</button>
         </div>
       )}
 
-      {/* Error state */}
+      {/* Error */}
       {status === 'error' && (
-        <div style={{
-          background: 'rgba(255,107,107,0.08)',
-          border: '1px solid rgba(255,107,107,0.2)',
-          borderRadius: 'var(--radius-sm)',
-          padding: '12px 14px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '10px',
-        }}>
-          <div style={{ fontSize: '12px', color: 'var(--red)' }}>
-            Could not read receipt. Please fill in manually.
-          </div>
-          <button
-            type="button"
-            onClick={reset}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text3)',
-              cursor: 'pointer',
-              fontSize: '11px',
-              fontFamily: 'var(--font-mono)',
-              flexShrink: 0,
-            }}
-          >
-            Try again
-          </button>
+        <div style={{ padding: '12px' }}>
+          <div>{errMsg}</div>
+          <button onClick={reset}>Try again</button>
         </div>
       )}
     </div>

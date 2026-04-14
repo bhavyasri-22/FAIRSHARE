@@ -1,15 +1,25 @@
-import { useEffect, useState, useRef } from "react";
-import { socket } from "../socket";
-import { Input, Button } from "./UI";
-import axios from "axios";
+import { useEffect, useState, useRef } from 'react';
+import { socket } from '../socket';
+import { Input, Button } from './UI';
+import { useNotif } from '../context/NotifContext';
+import axios from 'axios';
 
 export default function GroupChat({ groupId, user, token }) {
   const [messages, setMessages] = useState([]);
-  const [text, setText] = useState("");
-  const bottomRef = useRef(null);
+  const [text,     setText]     = useState('');
+  const bottomRef  = useRef(null);
+  const { setActiveChatGroupId } = useNotif();
 
-  // Load messages
+  // Tell NotifContext this chat is open → suppresses toast for incoming messages here
   useEffect(() => {
+    if (!groupId) return;
+    setActiveChatGroupId(groupId);
+    return () => setActiveChatGroupId(null); // clear when unmounted / group changes
+  }, [groupId, setActiveChatGroupId]);
+
+  // Load message history
+  useEffect(() => {
+    if (!groupId) return;
     axios.get(`/api/messages/${groupId}`, {
       headers: { Authorization: `Bearer ${token}` }
     })
@@ -17,110 +27,88 @@ export default function GroupChat({ groupId, user, token }) {
       .catch(() => setMessages([]));
   }, [groupId, token]);
 
-  // Socket setup
+  // Join group socket room + listen for incoming messages
   useEffect(() => {
-  if (!groupId) return;
+    if (!groupId) return;
+    socket.emit('join_group', groupId);
 
-  console.log("Joining group:", groupId);
+    const handleMessage = (msg) => {
+      setMessages(prev => {
+        // Prevent duplicates (can happen if sender receives their own echo)
+        if (prev.some(m => m._id === msg._id)) return prev;
+        return [...prev, msg];
+      });
+      // Scroll to bottom on new message
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+    };
 
-  // ✅ join room
-  socket.emit("join_group", groupId);
+    socket.on('receive_message', handleMessage);
+    return () => socket.off('receive_message', handleMessage);
+  }, [groupId]);
 
-  // ✅ stable listener
-  const handleMessage = (msg) => {
-    console.log("Received message:", msg);
-    setMessages(prev => [...prev, msg]);
-  };
+  // Scroll to bottom when messages load
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+  }, [messages.length === 1]); // only on initial load
 
-  socket.on("receive_message", handleMessage);
-
-  // ✅ cleanup (VERY IMPORTANT)
-  return () => {
-    socket.off("receive_message", handleMessage);
-  };
-}, [groupId]);
-
-
-  // ✅ FIXED sendMessage (ONLY IMPROVED)
   const sendMessage = () => {
     if (!text.trim()) return;
 
-    // ✅ DEBUG USER STRUCTURE
-    console.log("USER OBJECT:", user);
-
-    // ✅ SAFE USER ID EXTRACTION
-    const senderId =
-      user?._id ||
-      user?.id ||
-      user?.user?._id ||
-      user?.data?._id;
-
+    const senderId = user?._id || user?.id || user?.user?._id;
     if (!senderId) {
-      console.error("❌ senderId is undefined. Fix user object.");
+      console.error('senderId undefined — check user object');
       return;
     }
 
-    socket.emit("send_message", {
-      groupId,
-      userId: senderId, // ✅ FIXED
-      text,
-    });
-
-    setText("");
+    socket.emit('send_message', { groupId, userId: senderId, text: text.trim() });
+    setText('');
   };
 
+  const myId = user?._id || user?.id;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: 350 }}>
-      
+    <div style={{ display: 'flex', flexDirection: 'column', height: 350 }}>
+
       {/* Messages */}
       <div style={{
         flex: 1,
-        overflowY: "auto",
-        display: "flex",
-        flexDirection: "column",
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
         gap: 8,
-        paddingRight: 6
+        paddingRight: 6,
+        paddingBottom: 4,
       }}>
-        {messages.map((m) => {
-          // ✅ SAFE CHECK (prevents crash)
-          const isMe = m.sender?._id === (user?._id || user?.id);
+        {messages.length === 0 && (
+          <div style={{ textAlign: 'center', color: 'var(--text3)', fontSize: '12px', padding: '24px 0' }}>
+            No messages yet — say hello!
+          </div>
+        )}
 
+        {messages.map((m) => {
+          const isMe = String(m.sender?._id) === String(myId);
           return (
             <div
               key={m._id}
               style={{
-                alignSelf: isMe ? "flex-end" : "flex-start",
-                background: isMe ? "var(--accent)" : "var(--surface)",
-                color: isMe ? "#000" : "var(--text)",
-                padding: "8px 12px",
-                borderRadius: 12,
-                maxWidth: "70%",
-                fontSize: 14
+                alignSelf: isMe ? 'flex-end' : 'flex-start',
+                background: isMe ? 'var(--accent)' : 'var(--surface2)',
+                color: isMe ? '#000' : 'var(--text)',
+                border: isMe ? 'none' : '1px solid var(--border)',
+                padding: '8px 12px',
+                borderRadius: isMe ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
+                maxWidth: '72%',
+                fontSize: 13,
               }}
             >
               {!isMe && (
-                <div style={{
-                  fontSize: 11,
-                  opacity: 0.6,
-                  marginBottom: 2
-                }}>
-                  {m.sender?.name || "User"} {/* ✅ SAFE */}
+                <div style={{ fontSize: 10, opacity: 0.65, marginBottom: 2, fontFamily: 'var(--font-display)', fontWeight: 700 }}>
+                  {m.sender?.name || 'User'}
                 </div>
               )}
-
-              <div>{m.text}</div>
-
-              {/* Timestamp */}
-              <div style={{
-                fontSize: 10,
-                opacity: 0.5,
-                textAlign: "right",
-                marginTop: 4
-              }}>
-                {new Date(m.createdAt).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit"
-                })}
+              <div style={{ lineHeight: 1.5 }}>{m.text}</div>
+              <div style={{ fontSize: 10, opacity: 0.5, textAlign: 'right', marginTop: 4 }}>
+                {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </div>
             </div>
           );
@@ -129,20 +117,14 @@ export default function GroupChat({ groupId, user, token }) {
       </div>
 
       {/* Input */}
-      <div style={{
-        display: "flex",
-        gap: 8,
-        marginTop: 10
-      }}>
+      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
         <Input
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={e => setText(e.target.value)}
           placeholder="Message..."
-          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+          onKeyDown={e => e.key === 'Enter' && sendMessage()}
         />
-        <Button onClick={sendMessage}>
-          Send
-        </Button>
+        <Button onClick={sendMessage}>Send</Button>
       </div>
     </div>
   );
