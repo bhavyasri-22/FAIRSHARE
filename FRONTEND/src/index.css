@@ -1,43 +1,50 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-:root, [data-theme="dark"] {
-  --bg:        #080b10;
-  --surface:   #0f1318;
-  --surface2:  #161c24;
-  --surface3:  #1e2630;
-  --border:    #242d38;
-  --border2:   #2e3a47;
-  --text:      #e8edf2;
-  --text2:     #8a97a8;
-  --text3:     #4a5568;
-}
-
-[data-theme="light"] {
-  --bg:        #f8fafc;
-  --surface:   #ffffff;
-  --surface2:  #f1f5f9;
-  --surface3:  #e2e8f0;
-  --border:    #e2e8f0;
-  --border2:   #cbd5e1;
-  --text:      #0f172a;
-  --text2:     #475569;
-  --text3:     #94a3b8;
-}
-
 :root {
-  --accent:    #00d4aa;
-  --accent2:   #ff6b6b;
-  --accent3:   #ffd166;
-  --green:     #00d4aa;
-  --red:       #ff6b6b;
-  --yellow:    #ffd166;
-  --shadow:    0 8px 32px rgba(0,0,0,0.15);
-  --shadow-accent: 0 4px 24px rgba(0,212,170,0.15);
-  --radius:    14px;
-  --radius-sm: 8px;
-  --radius-lg: 20px;
-  --font-display: 'Syne', sans-serif;
-  --font-mono:    'DM Mono', monospace;
+  --bg:        #f4f3ff;
+  --surface:   #ffffff;
+  --surface2:  #f8f7ff;
+  --surface3:  #ede9fe;
+  --border:    rgba(109,91,235,0.12);
+  --border2:   rgba(109,91,235,0.2);
+  --accent:    #6d5beb;
+  --accent-hover: #5a48d4;
+  --accent2:   #f97316;
+  --accent3:   #22d3a5;
+  --accent4:   #f43f5e;
+  --text:      #13111a;
+  --text2:     #6b6885;
+  --text3:     #a09dba;
+  --green:     #22d3a5;
+  --red:       #f43f5e;
+  --yellow:    #f59e0b;
+  --orange:    #f97316;
+  --sidebar-w: 240px;
+  --sidebar-bg: #6d5beb;
+  --shadow:    0 2px 16px rgba(109,91,235,0.10);
+  --shadow-lg: 0 8px 40px rgba(109,91,235,0.16);
+  --radius:    16px;
+  --radius-sm: 10px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+  --font-display: 'Plus Jakarta Sans', sans-serif;
+  --font-body:    'Space Grotesk', sans-serif;
+}
+
+[data-theme="dark"] {
+  --bg:        #0e0c1a;
+  --surface:   #17142a;
+  --surface2:  #201d36;
+  --surface3:  #2a2648;
+  --border:    rgba(109,91,235,0.18);
+  --border2:   rgba(109,91,235,0.3);
+  --text:      #f0eeff;
+  --text2:     #9b97c0;
+  --text3:     #5d5a80;
+  --shadow:    0 2px 20px rgba(0,0,0,0.4);
+  --shadow-lg: 0 8px 40px rgba(0,0,0,0.5);
 }
 
 html, body, #root { height: 100%; }
@@ -45,56 +52,49 @@ html, body, #root { height: 100%; }
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: 14px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
 
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background:
-    radial-gradient(ellipse 80% 50% at 10% 0%, rgba(0,212,170,0.04) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 40% at 90% 100%, rgba(255,107,107,0.03) 0%, transparent 60%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(0,212,170,0.015) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0,212,170,0.015) 1px, transparent 1px);
-  background-size: 48px 48px;
-  pointer-events: none;
-  z-index: 0;
-}
-
-input, select, textarea, button { font-family: var(--font-mono); }
+input, select, textarea, button { font-family: var(--font-body); }
 
 @keyframes fadeUp {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(14px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes pulse {
   0%, 100% { opacity: 1; }
-  50%       { opacity: 0.3; }
+  50%       { opacity: 0.4; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
-.fade-up { animation: fadeUp 0.3s ease both; }
+.fade-up   { animation: fadeUp 0.35s cubic-bezier(0.22,1,0.36,1) both; }
+.slide-in  { animation: slideIn 0.25s ease both; }
 
-/* ── RESPONSIVE ───────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
 @media (max-width: 768px) {
   .desktop-sidebar  { display: none !important; }
   .mobile-topbar    { display: flex !important; }
   .mobile-bottomnav { display: flex !important; }
-
-  .main-content {
-    padding: 72px 16px 90px !important;
-  }
+  .main-content     { padding: 72px 14px 86px !important; }
 }
+
+/* Sidebar always purple regardless of theme */
+.desktop-sidebar { background: var(--sidebar-bg) !important; }
+
+/* Light mode body bg fix */
+[data-theme="light"] body { background: #f4f3ff; }
+[data-theme="dark"]  body { background: #0e0c1a; }
+[data-theme="dark"] .mobile-topbar,
+[data-theme="dark"] .mobile-bottomnav { background: #17142a !important; }
