@@ -50,11 +50,11 @@ function NotifPanel({ history }) {
   );
 }
 
-function ProfilePanel({ user, logout, onClose }) {
+function ProfilePanel({ user, logout, onClose, style = {} }) {
   const { theme, toggleTheme } = useTheme();
   const ini = initials(user?.name);
   return (
-    <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--radius)',boxShadow:'var(--shadow-lg)',overflow:'hidden',position:'absolute',bottom:'calc(100% + 8px)',left:0,right:0,zIndex:60}}>
+    <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--radius)',boxShadow:'var(--shadow-lg)',overflow:'hidden',zIndex:60, ...style}}>
       <div style={{padding:'16px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'10px'}}>
         <div style={{width:'40px',height:'40px',borderRadius:'12px',background:'linear-gradient(135deg,var(--accent),var(--accent2))',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--font-display)',fontSize:'14px',fontWeight:800,color:'#fff',flexShrink:0}}>{ini}</div>
         <div style={{flex:1,minWidth:0}}>
@@ -158,7 +158,14 @@ export default function Sidebar() {
             </div>
           </button>
           <div style={{color:'rgba(255,255,255,0.6)'}}>{bellBtn(18)}</div>
-          {showProfile && <ProfilePanel user={user} logout={logout} onClose={()=>setShowProfile(false)}/>}
+          {showProfile && (
+            <ProfilePanel 
+              user={user} 
+              logout={logout} 
+              onClose={()=>setShowProfile(false)}
+              style={{ position:'absolute', bottom:'calc(100% + 8px)', left:'14px', right:'14px' }}
+            />
+          )}
         </div>
       </aside>
 
@@ -185,7 +192,13 @@ export default function Sidebar() {
           </div>
         )}
         {showProfile && (
-          <div style={{position:'fixed',top:'70px',left:'12px',right:'12px',background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--radius)',boxShadow:'var(--shadow-lg)',zIndex:200}}>
+          <div 
+            onClick={() => setShowProfile(false)}
+            style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:190}} 
+          />
+        )}
+        {showProfile && (
+          <div style={{position:'fixed',top:'70px',left:'12px',right:'12px',zIndex:200}}>
             <ProfilePanel user={user} logout={logout} onClose={()=>setShowProfile(false)}/>
           </div>
         )}

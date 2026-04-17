@@ -10,6 +10,7 @@ export const groupsAPI = {
   join:         (inviteCode)         => api.post('/groups/join', { inviteCode }),
   getAll:       ()                   => api.get('/groups/my'),
   removeMember: (groupId, memberId)  => api.del(`/groups/${groupId}/members/${memberId}`),
+  leave:        (groupId)            => api.post(`/groups/${groupId}/leave`),
 };
 
 export const expensesAPI = {
@@ -21,6 +22,10 @@ export const expensesAPI = {
 export const settlementsAPI = {
   record:     (payload) => api.post('/settlements',           payload),
   getHistory: (groupId) => api.get(`/settlements/${groupId}`),
+};
+
+export const messagesAPI = {
+  getForGroup: (groupId) => api.get(`/messages/${groupId}`),
 };
 
 

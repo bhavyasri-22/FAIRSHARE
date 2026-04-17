@@ -156,7 +156,12 @@ export default function ReceiptScanner({ onResult }) {
 
     setSource(result.source);
     setStatus('done');
-    onResult({ amount: result.amount, description: result.description, billImage: b64 });
+    onResult({ 
+      amount: result.amount, 
+      description: result.description, 
+      billImage: b64,
+      lineItems: result.line_items || []
+    });
   }
 
   function reset() {

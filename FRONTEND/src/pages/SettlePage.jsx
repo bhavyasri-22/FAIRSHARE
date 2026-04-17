@@ -30,7 +30,12 @@ export default function SettlePage() {
   const [paying,    setPaying]    = useState(false);
 
   const load = useCallback(async (gid) => {
-    if (!gid) return;
+    if (!gid) {
+      setBalances([]);
+      setSettlements([]);
+      setHistory([]);
+      return;
+    }
     setLoading(true);
     const [expData, settleData, histData] = await Promise.all([
       expensesAPI.getForGroup(gid),

@@ -1,4 +1,6 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
+import { groupsAPI } from '../api';
+
 
 const AuthContext = createContext(null);
 
@@ -12,6 +14,26 @@ export function AuthProvider({ children }) {
   });
 
   const [groups, setGroups] = useState([]);
+
+  const refreshGroups = useCallback(async () => {
+    if (!token) return;
+    try {
+      const data = await groupsAPI.getAll();
+      if (data.success) {
+        setGroups(data.data);
+      }
+    } catch (err) {
+      console.error('Failed to refresh groups:', err);
+    }
+  }, [token]);
+
+  // Handle initial load and re-fetches
+  useEffect(() => {
+    if (token) {
+      refreshGroups();
+    }
+  }, [token, refreshGroups]);
+
 
   function login(data) {
     // ✅ store correctly
@@ -31,8 +53,12 @@ export function AuthProvider({ children }) {
     setGroups([]);
   }
 
+  const contextValue = useMemo(() => ({
+    user, token, groups, setGroups, refreshGroups, login, logout
+  }), [user, token, groups, setGroups, refreshGroups]);
+
   return (
-    <AuthContext.Provider value={{ user, token, groups, setGroups, login, logout }}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

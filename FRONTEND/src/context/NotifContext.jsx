@@ -5,7 +5,7 @@ import { useAuth } from './AuthContext';
 const NotifContext = createContext(null);
 
 export function NotifProvider({ children }) {
-  const { user } = useAuth();
+  const { user, refreshGroups } = useAuth();
 
   const [toasts,  setToasts]  = useState([]);
   const [history, setHistory] = useState([]);
@@ -19,11 +19,22 @@ export function NotifProvider({ children }) {
 
   const timerMap = useRef({});
 
-  // Join personal notification room whenever user changes
+  // Join personal notification room whenever user changes or socket reconnects
   useEffect(() => {
     if (!user) return;
     const uid = user.id || user._id;
-    socket.emit('join_user', uid);
+
+    const onConnect = () => {
+      console.log('Socket connected/reconnected, joining user room:', uid);
+      socket.emit('join_user', uid);
+    };
+
+    if (socket.connected) onConnect();
+
+    socket.on('connect', onConnect);
+    return () => {
+      socket.off('connect', onConnect);
+    };
   }, [user]);
 
   const dismissToast = useCallback((id) => {
@@ -38,6 +49,12 @@ export function NotifProvider({ children }) {
     // Always add to history and increment unread
     setHistory(prev => [entry, ...prev]);
     setUnread(prev => prev + 1);
+
+    // If this is a group update (member, expense, or settlement), refresh the groups list
+    const REFRESH_TYPES = ['member_joined', 'member_removed', 'expense_added', 'manual_settlement', 'payment_received'];
+    if (REFRESH_TYPES.includes(notification.type)) {
+      refreshGroups();
+    }
 
     // Suppress toast only if this is a chat message for the group currently open
     const isChatForActiveGroup =

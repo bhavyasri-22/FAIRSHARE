@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { socket } from '../socket';
 import { Input, Button } from './UI';
 import { useNotif } from '../context/NotifContext';
-import axios from 'axios';
+import { messagesAPI } from '../api';
 
 export default function GroupChat({ groupId, user, token }) {
   const [messages, setMessages] = useState([]);
@@ -20,10 +20,14 @@ export default function GroupChat({ groupId, user, token }) {
   // Load message history
   useEffect(() => {
     if (!groupId) return;
-    axios.get(`/api/messages/${groupId}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => setMessages(res.data))
+    messagesAPI.getForGroup(groupId)
+      .then(data => {
+        // Our api client already returns the json data, 
+        // but if it's the custom {success, data} wrapper, we handle it.
+        // Actually, looking at client.js, it returns res.json() directly.
+        // And backend routes return res.json(messages).
+        setMessages(Array.isArray(data) ? data : []);
+      })
       .catch(() => setMessages([]));
   }, [groupId, token]);
 

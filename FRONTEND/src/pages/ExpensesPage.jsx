@@ -47,7 +47,10 @@ export default function ExpensesPage() {
   }, [viewGroupId]);
 
   const loadExpenses = useCallback(async (gid) => {
-    if (!gid) return;
+    if (!gid) {
+      setExpenses([]);
+      return;
+    }
     setListLoading(true);
     const data = await expensesAPI.getForGroup(gid);
     setListLoading(false);

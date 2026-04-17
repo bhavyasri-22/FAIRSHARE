@@ -64,6 +64,24 @@ export default function ExpenseCard({ expense, groupCurrency = 'INR' }) {
         {/* Splits detail */}
         {open && (
           <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border)' }}>
+            {expense.splitType === 'itemized' && expense.lineItems?.length > 0 && (
+              <div style={{ marginBottom: '14px', paddingBottom: '10px', borderBottom: '1px dashed var(--border)' }}>
+                <div style={{ fontSize: '10px', color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '8px' }}>Item Breakdown</div>
+                {expense.lineItems.map((item, i) => (
+                  <div key={i} style={{ marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600 }}>
+                      <span>{item.description}</span>
+                      <span>{sym}{item.total_price.toFixed(2)}</span>
+                    </div>
+                    <div style={{ fontSize: '10px', color: 'var(--text3)' }}>
+                      Shared by: {item.splitAmong?.map(u => u.name.split(' ')[0]).join(', ')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ fontSize: '10px', color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '8px' }}>Total Owed</div>
             {expense.splits.map(s => (
               <div key={s.user?._id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text2)', padding: '3px 0' }}>
                 <span>{s.user?.name}</span>
