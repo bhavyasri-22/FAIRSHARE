@@ -2,11 +2,12 @@ import { useState, useRef } from 'react';
 
 // ── AI extraction (Mindee via backend) ───────────────────────────────────────
 async function extractWithAI(base64Data, mimeType) {
+  const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:4000';
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 45000);
 
   try {
-    const response = await fetch('/api/receipts/scan', {
+    const response = await fetch(`${BASE_URL}/api/receipts/scan`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ base64: base64Data, mimeType }),

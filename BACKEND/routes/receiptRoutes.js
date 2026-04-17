@@ -12,6 +12,7 @@ const mindeeHeaders = {
 };
 
 router.post("/scan", async (req, res) => {
+  console.log("=== START SCAN REQUEST ===");
   try {
     const { base64 } = req.body;
     if (!base64) return res.status(400).json({ error: "No image provided" });
